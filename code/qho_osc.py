@@ -89,7 +89,7 @@ def run_comparisons():
     off_diag = np.full(N - 1, off_diag_kin)
 
     # Solve eigenvalue problem for tridiagonal matrix
-    evals_fd, _ = eigh_tridiagonal(main_diag, off_diag)
+    evals_fd, evecs_fd = eigh_tridiagonal(main_diag, off_diag)
     e0_fd = evals_fd[0]
     e1_fd = evals_fd[1]
 
@@ -164,6 +164,38 @@ def run_comparisons():
     print(
         f"{'Numerical: Shooting IVP':<25} | {abs(e0_shoot - e0_fd):<20.6e} | {abs(e1_shoot - e1_fd):.6e}"
     )
+
+    # Return the aggregated results to be used by the plotting script
+    return {
+        "x": x,
+        "dx": dx,
+        "v_total": v_total,
+        "e0_fd": e0_fd,
+        "e1_fd": e1_fd,
+        # Normalize discrete eigenvectors to continuous probability density wavefunctions
+        "psi0_fd": evecs_fd[:, 0] / np.sqrt(dx),
+        "psi1_fd": evecs_fd[:, 1] / np.sqrt(dx),
+        "alpha0": alpha0_opt,
+        "alpha1": alpha1_opt,
+        "errors_e0": [
+            abs(e0_pert_1st - e0_fd),
+            abs(e0_pert_2nd - e0_fd),
+            abs(e0_var - e0_fd),
+            abs(e0_shoot - e0_fd),
+        ],
+        "errors_e1": [
+            abs(e1_pert_1st - e1_fd),
+            abs(e1_pert_2nd - e1_fd),
+            abs(e1_var - e1_fd),
+            abs(e1_shoot - e1_fd),
+        ],
+        "methods": [
+            "Perturbation (1st)",
+            "Perturbation (2nd)",
+            "Variational",
+            "Shooting IVP",
+        ],
+    }
 
 
 if __name__ == "__main__":
