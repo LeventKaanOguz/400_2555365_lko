@@ -1,8 +1,18 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+import sys
+import csv
+
+# Ensure python can find the modules by adding the script's directory to the path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
 
 # Import the runner and parameters from your existing code
-from qho_osc import run_comparisons, SIGMA
+try:
+    from qho_osc import run_comparisons, SIGMA
+except ModuleNotFoundError:
+    from qho_oscillator import run_comparisons, SIGMA
 
 
 def create_showcase():
@@ -112,6 +122,46 @@ def create_showcase():
     plt.tight_layout()
     plt.savefig("results/figures/qho_showcase.png", dpi=300)
     print("\nShowcase image successfully generated and saved as 'qho_showcase.png'")
+
+    # ==========================================
+    # EXPORT RESULTS TO CSV TABLE
+    # ==========================================
+    os.makedirs("results/tables", exist_ok=True)
+    csv_path = "results/tables/qho_numerical_results.csv"
+
+    with open(csv_path, mode="w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "Method",
+                "E0 (Ground State)",
+                "E1 (1st Excited)",
+                "E0 Absolute Error",
+                "E1 Absolute Error",
+            ]
+        )
+
+        for i, method in enumerate(results["methods_all"]):
+            e0_val = results["energies_e0"][i]
+            e1_val = results["energies_e1"][i]
+
+            if method == "Numerical: Matrix FD":
+                str_err_e0, str_err_e1 = "-", "-"
+            else:
+                str_err_e0 = f"{results['errors_e0'][i]:.2e}"
+                str_err_e1 = f"{results['errors_e1'][i]:.2e}"
+
+            writer.writerow(
+                [
+                    method,
+                    f"{e0_val:.5f}",
+                    f"{e1_val:.5f}",
+                    str_err_e0,
+                    str_err_e1,
+                ]
+            )
+
+    print(f"Numerical results table successfully generated and saved as '{csv_path}'")
     plt.show()
 
 

@@ -195,6 +195,27 @@ def run_comparisons():
             "Variational",
             "Shooting IVP",
         ],
+        "energies_e0": [
+            e0_pert_1st,
+            e0_pert_2nd,
+            e0_var,
+            e0_shoot,
+            e0_fd,
+        ],
+        "energies_e1": [
+            e1_pert_1st,
+            e1_pert_2nd,
+            e1_var,
+            e1_shoot,
+            e1_fd,
+        ],
+        "methods_all": [
+            "Perturbation (1st)",
+            "Perturbation (2nd)",
+            "Variational",
+            "Shooting IVP",
+            "Numerical: Matrix FD",
+        ],
     }
 
 
