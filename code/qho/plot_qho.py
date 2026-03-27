@@ -3,6 +3,7 @@ import numpy as np
 import os
 import sys
 import csv
+from scipy.integrate import simpson
 
 # Ensure python can find the modules by adding the script's directory to the path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -27,6 +28,12 @@ def create_showcase():
     psi1_fd = results["psi1_fd"]
     alpha0 = results["alpha0"]
     alpha1 = results["alpha1"]
+    alpha0_exp = results["alpha0_exp"]
+    alpha1_exp = results["alpha1_exp"]
+    params0_poly = results["params0_poly"]
+    params1_poly = results["params1_poly"]
+    params0_poly_gauss = results["params0_poly_gauss"]
+    params1_poly_gauss = results["params1_poly_gauss"]
 
     # --- Calculate Variational Wavefunctions (Probability Densities) ---
     # Ground state: Ansatz: (2alpha/pi)^1/4 * e^(-alpha x^2)
@@ -35,6 +42,51 @@ def create_showcase():
     # First excited state: Ansatz: N * x * e^(-alpha x^2)
     N_var = np.sqrt(4 * alpha1 * np.sqrt(2 * alpha1 / np.pi))
     psi1_var = N_var * x * np.exp(-alpha1 * x**2)
+
+    # Exponential Ansatzes
+    # Ground state: N * e^(-alpha |x|) -> N = sqrt(alpha)
+    psi0_exp = np.sqrt(alpha0_exp) * np.exp(-alpha0_exp * np.abs(x))
+    # First excited state: N * x * e^(-alpha |x|) -> N = sqrt(2 * alpha^3)
+    psi1_exp = np.sqrt(2 * alpha1_exp**3) * x * np.exp(-alpha1_exp * np.abs(x))
+
+    # Helper functions for arbitrary power series evaluation
+    def build_even_poly(x_val, coeffs):
+        poly = np.ones_like(x_val)
+        for i, c in enumerate(coeffs):
+            poly = poly + c * x_val ** (2 * (i + 1))
+        return poly
+
+    def build_odd_poly(x_val, coeffs):
+        poly = np.copy(x_val)
+        for i, c in enumerate(coeffs):
+            poly = poly + c * x_val ** (2 * (i + 1) + 1)
+        return poly
+
+    # Polynomial-Exponential Ansatzes (Numerical Normalization)
+    psi0_poly_unnorm = np.exp(-params0_poly[0] * np.abs(x)) * build_even_poly(
+        x, params0_poly[1:]
+    )
+    norm0_poly = np.sqrt(simpson(y=psi0_poly_unnorm**2, x=x))
+    psi0_poly = psi0_poly_unnorm / norm0_poly
+
+    psi1_poly_unnorm = np.exp(-params1_poly[0] * np.abs(x)) * build_odd_poly(
+        x, params1_poly[1:]
+    )
+    norm1_poly = np.sqrt(simpson(y=psi1_poly_unnorm**2, x=x))
+    psi1_poly = psi1_poly_unnorm / norm1_poly
+
+    # Polynomial-Gaussian Ansatzes (Numerical Normalization)
+    psi0_poly_gauss_unnorm = np.exp(-params0_poly_gauss[0] * x**2) * build_even_poly(
+        x, params0_poly_gauss[1:]
+    )
+    norm0_poly_gauss = np.sqrt(simpson(y=psi0_poly_gauss_unnorm**2, x=x))
+    psi0_poly_gauss = psi0_poly_gauss_unnorm / norm0_poly_gauss
+
+    psi1_poly_gauss_unnorm = np.exp(-params1_poly_gauss[0] * x**2) * build_odd_poly(
+        x, params1_poly_gauss[1:]
+    )
+    norm1_poly_gauss = np.sqrt(simpson(y=psi1_poly_gauss_unnorm**2, x=x))
+    psi1_poly_gauss = psi1_poly_gauss_unnorm / norm1_poly_gauss
 
     # --- Setup the Figure ---
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
@@ -65,7 +117,31 @@ def create_showcase():
         color="cyan",
         linestyle=":",
         lw=2.5,
-        label="|ψ_0 Variational|²",
+        label="|ψ_0 Var (Gauss)|²",
+    )
+    ax1.plot(
+        x,
+        e0_fd + scale * psi0_exp**2,
+        color="green",
+        linestyle="-.",
+        lw=2.0,
+        label="|ψ_0 Var (Exp)|²",
+    )
+    ax1.plot(
+        x,
+        e0_fd + scale * psi0_poly**2,
+        color="purple",
+        linestyle="--",
+        lw=2.0,
+        label="|ψ_0 Var (Poly-Exp)|²",
+    )
+    ax1.plot(
+        x,
+        e0_fd + scale * psi0_poly_gauss**2,
+        color="olive",
+        linestyle="-.",
+        lw=2.0,
+        label="|ψ_0 Var (Poly-Gauss)|²",
     )
 
     ax1.fill_between(
@@ -77,7 +153,31 @@ def create_showcase():
         color="orange",
         linestyle=":",
         lw=2.5,
-        label="|ψ_1 Variational|²",
+        label="|ψ_1 Var (Gauss)|²",
+    )
+    ax1.plot(
+        x,
+        e1_fd + scale * psi1_exp**2,
+        color="magenta",
+        linestyle="-.",
+        lw=2.0,
+        label="|ψ_1 Var (Exp)|²",
+    )
+    ax1.plot(
+        x,
+        e1_fd + scale * psi1_poly**2,
+        color="brown",
+        linestyle="--",
+        lw=2.0,
+        label="|ψ_1 Var (Poly-Exp)|²",
+    )
+    ax1.plot(
+        x,
+        e1_fd + scale * psi1_poly_gauss**2,
+        color="navy",
+        linestyle="-.",
+        lw=2.0,
+        label="|ψ_1 Var (Poly-Gauss)|²",
     )
 
     # Zoom in to the relevant part of the potential well

@@ -105,32 +105,140 @@ def run_comparisons():
         return ke + pe
 
     # Define arbitrary ansatz functions (easily extensible to more parameters)
-    def ansatz_0(x_val, alpha):
+    def ansatz_0_gauss(x_val, alpha):
         return np.exp(-alpha * x_val**2)
 
-    def ansatz_1(x_val, alpha):
+    def ansatz_1_gauss(x_val, alpha):
         return x_val * np.exp(-alpha * x_val**2)
 
-    # Minimize parameters using scipy's general optimizer
-    res0 = minimize(
-        lambda p: compute_expectation_value(ansatz_0, p, x, v_total),
-        x0=[1.0],
-        bounds=[(0.01, 10.0)],
-    )
-    alpha0_opt = res0.x[0]
-    e0_var = res0.fun
+    def ansatz_0_exp(x_val, alpha):
+        return np.exp(-alpha * np.abs(x_val))
 
-    res1 = minimize(
-        lambda p: compute_expectation_value(ansatz_1, p, x, v_total),
+    def ansatz_1_exp(x_val, alpha):
+        return x_val * np.exp(-alpha * np.abs(x_val))
+
+    # General Arbitrary-Order Power Series
+    def ansatz_0_poly(x_val, alpha, *coeffs):
+        poly = np.ones_like(x_val)
+        for i, c in enumerate(coeffs):
+            poly = poly + c * x_val ** (2 * (i + 1))
+        return np.exp(-alpha * np.abs(x_val)) * poly
+
+    def ansatz_1_poly(x_val, alpha, *coeffs):
+        poly = np.copy(x_val)
+        for i, c in enumerate(coeffs):
+            poly = poly + c * x_val ** (2 * (i + 1) + 1)
+        return np.exp(-alpha * np.abs(x_val)) * poly
+
+    def ansatz_0_poly_gauss(x_val, alpha, *coeffs):
+        poly = np.ones_like(x_val)
+        for i, c in enumerate(coeffs):
+            poly = poly + c * x_val ** (2 * (i + 1))
+        return np.exp(-alpha * x_val**2) * poly
+
+    def ansatz_1_poly_gauss(x_val, alpha, *coeffs):
+        poly = np.copy(x_val)
+        for i, c in enumerate(coeffs):
+            poly = poly + c * x_val ** (2 * (i + 1) + 1)
+        return np.exp(-alpha * x_val**2) * poly
+
+    # Minimize parameters using scipy's general optimizer
+    res0_gauss = minimize(
+        lambda p: compute_expectation_value(ansatz_0_gauss, p, x, v_total),
         x0=[1.0],
         bounds=[(0.01, 10.0)],
     )
-    alpha1_opt = res1.x[0]
-    e1_var = res1.fun
+    alpha0_gauss_opt = res0_gauss.x[0]
+    e0_var_gauss = res0_gauss.fun
+
+    res1_gauss = minimize(
+        lambda p: compute_expectation_value(ansatz_1_gauss, p, x, v_total),
+        x0=[1.0],
+        bounds=[(0.01, 10.0)],
+    )
+    alpha1_gauss_opt = res1_gauss.x[0]
+    e1_var_gauss = res1_gauss.fun
+
+    res0_exp = minimize(
+        lambda p: compute_expectation_value(ansatz_0_exp, p, x, v_total),
+        x0=[1.0],
+        bounds=[(0.01, 10.0)],
+    )
+    alpha0_exp_opt = res0_exp.x[0]
+    e0_var_exp = res0_exp.fun
+
+    res1_exp = minimize(
+        lambda p: compute_expectation_value(ansatz_1_exp, p, x, v_total),
+        x0=[1.0],
+        bounds=[(0.01, 10.0)],
+    )
+    alpha1_exp_opt = res1_exp.x[0]
+    e1_var_exp = res1_exp.fun
+
+    res0_poly = minimize(
+        lambda p: compute_expectation_value(ansatz_0_poly, p, x, v_total),
+        x0=[1.0, 0.1, 0.01, 0.001, 0.0001],
+        bounds=[(0.01, 10.0), (None, None), (None, None), (None, None), (None, None)],
+    )
+    params0_poly = res0_poly.x
+    e0_var_poly = res0_poly.fun
+
+    res1_poly = minimize(
+        lambda p: compute_expectation_value(ansatz_1_poly, p, x, v_total),
+        x0=[1.0, 0.1, 0.01, 0.001, 0.0001],
+        bounds=[(0.01, 10.0), (None, None), (None, None), (None, None), (None, None)],
+    )
+    params1_poly = res1_poly.x
+    e1_var_poly = res1_poly.fun
+
+    res0_poly_gauss = minimize(
+        lambda p: compute_expectation_value(ansatz_0_poly_gauss, p, x, v_total),
+        x0=[1.0, 0.1, 0.01, 0.001, 0.0001],
+        bounds=[(0.01, 10.0), (None, None), (None, None), (None, None), (None, None)],
+    )
+    params0_poly_gauss = res0_poly_gauss.x
+    e0_var_poly_gauss = res0_poly_gauss.fun
+
+    res1_poly_gauss = minimize(
+        lambda p: compute_expectation_value(ansatz_1_poly_gauss, p, x, v_total),
+        x0=[1.0, 0.1, 0.01, 0.001, 0.0001],
+        bounds=[(0.01, 10.0), (None, None), (None, None), (None, None), (None, None)],
+    )
+    params1_poly_gauss = res1_poly_gauss.x
+    e1_var_poly_gauss = res1_poly_gauss.fun
+
+    def format_poly_params(params, parity="even"):
+        res = f"alpha={params[0]:.3f}"
+        for i, c in enumerate(params[1:]):
+            power = 2 * (i + 1) if parity == "even" else 2 * (i + 1) + 1
+            res += f", c_{power}={c:.3f}"
+        return res
 
     print("--- Variational Method Results ---")
-    print(f"Optimized alpha_0 (Ground State):      {alpha0_opt:.6f}")
-    print(f"Optimized alpha_1 (1st Excited State): {alpha1_opt:.6f}\n")
+    print(
+        f"Gaussian Ansatz Optimized alpha_0 (Ground State):      {alpha0_gauss_opt:.6f}"
+    )
+    print(
+        f"Gaussian Ansatz Optimized alpha_1 (1st Excited State): {alpha1_gauss_opt:.6f}"
+    )
+    print(
+        f"Exponential Ansatz Optimized alpha_0 (Ground State):   {alpha0_exp_opt:.6f}"
+    )
+    print(
+        f"Exponential Ansatz Optimized alpha_1 (1st Exc. State): {alpha1_exp_opt:.6f}\n"
+    )
+    print(
+        f"Poly-Exp Ansatz Optimized params (Ground):     {format_poly_params(params0_poly, 'even')}"
+    )
+    print(
+        f"Poly-Exp Ansatz Optimized params (1st Exc.):   {format_poly_params(params1_poly, 'odd')}\n"
+    )
+    print(
+        f"Poly-Gauss Ansatz Optimized params (Ground):   {format_poly_params(params0_poly_gauss, 'even')}"
+    )
+    print(
+        f"Poly-Gauss Ansatz Optimized params (1st Exc.): {format_poly_params(params1_poly_gauss, 'odd')}\n"
+    )
 
     # ==========================================
     # 3. NUMERICAL METHOD 1: FINITE DIFFERENCE
@@ -197,7 +305,14 @@ def run_comparisons():
     print(
         f"{'Perturbation Theory (2nd)':<25} | {e0_pert_2nd:<20.6f} | {e1_pert_2nd:.6f}"
     )
-    print(f"{'Variational Method':<25} | {e0_var:<20.6f} | {e1_var:.6f}")
+    print(
+        f"{'Variational (Gaussian)':<25} | {e0_var_gauss:<20.6f} | {e1_var_gauss:.6f}"
+    )
+    print(f"{'Variational (Exponential)':<25} | {e0_var_exp:<20.6f} | {e1_var_exp:.6f}")
+    print(f"{'Variational (Poly-Exp)':<25} | {e0_var_poly:<20.6f} | {e1_var_poly:.6f}")
+    print(
+        f"{'Variational (Poly-Gauss)':<25} | {e0_var_poly_gauss:<20.6f} | {e1_var_poly_gauss:.6f}"
+    )
     print(f"{'Numerical: Matrix FD':<25} | {e0_fd:<20.6f} | {e1_fd:.6f}")
     print(f"{'Numerical: Shooting IVP':<25} | {e0_shoot:<20.6f} | {e1_shoot:.6f}")
 
@@ -216,7 +331,16 @@ def run_comparisons():
         f"{'Perturbation Theory (2nd)':<25} | {abs(e0_pert_2nd - e0_fd):<20.6e} | {abs(e1_pert_2nd - e1_fd):.6e}"
     )
     print(
-        f"{'Variational Method':<25} | {abs(e0_var - e0_fd):<20.6e} | {abs(e1_var - e1_fd):.6e}"
+        f"{'Variational (Gaussian)':<25} | {abs(e0_var_gauss - e0_fd):<20.6e} | {abs(e1_var_gauss - e1_fd):.6e}"
+    )
+    print(
+        f"{'Variational (Exponential)':<25} | {abs(e0_var_exp - e0_fd):<20.6e} | {abs(e1_var_exp - e1_fd):.6e}"
+    )
+    print(
+        f"{'Variational (Poly-Exp)':<25} | {abs(e0_var_poly - e0_fd):<20.6e} | {abs(e1_var_poly - e1_fd):.6e}"
+    )
+    print(
+        f"{'Variational (Poly-Gauss)':<25} | {abs(e0_var_poly_gauss - e0_fd):<20.6e} | {abs(e1_var_poly_gauss - e1_fd):.6e}"
     )
     print(
         f"{'Numerical: Shooting IVP':<25} | {abs(e0_shoot - e0_fd):<20.6e} | {abs(e1_shoot - e1_fd):.6e}"
@@ -232,44 +356,68 @@ def run_comparisons():
         # Normalize discrete eigenvectors to continuous probability density wavefunctions
         "psi0_fd": evecs_fd[:, 0] / np.sqrt(dx),
         "psi1_fd": evecs_fd[:, 1] / np.sqrt(dx),
-        "alpha0": alpha0_opt,
-        "alpha1": alpha1_opt,
+        "alpha0": alpha0_gauss_opt,
+        "alpha1": alpha1_gauss_opt,
+        "alpha0_exp": alpha0_exp_opt,
+        "alpha1_exp": alpha1_exp_opt,
+        "params0_poly": params0_poly,
+        "params1_poly": params1_poly,
+        "params0_poly_gauss": params0_poly_gauss,
+        "params1_poly_gauss": params1_poly_gauss,
         "errors_e0": [
             abs(e0_pert_1st - e0_fd),
             abs(e0_pert_2nd - e0_fd),
-            abs(e0_var - e0_fd),
+            abs(e0_var_gauss - e0_fd),
+            abs(e0_var_exp - e0_fd),
+            abs(e0_var_poly - e0_fd),
+            abs(e0_var_poly_gauss - e0_fd),
             abs(e0_shoot - e0_fd),
         ],
         "errors_e1": [
             abs(e1_pert_1st - e1_fd),
             abs(e1_pert_2nd - e1_fd),
-            abs(e1_var - e1_fd),
+            abs(e1_var_gauss - e1_fd),
+            abs(e1_var_exp - e1_fd),
+            abs(e1_var_poly - e1_fd),
+            abs(e1_var_poly_gauss - e1_fd),
             abs(e1_shoot - e1_fd),
         ],
         "methods": [
             "Perturbation (1st)",
             "Perturbation (2nd)",
-            "Variational",
+            "Variational (Gauss)",
+            "Variational (Exp)",
+            "Variational (Poly-Exp)",
+            "Variational (Poly-Gauss)",
             "Shooting IVP",
         ],
         "energies_e0": [
             e0_pert_1st,
             e0_pert_2nd,
-            e0_var,
+            e0_var_gauss,
+            e0_var_exp,
+            e0_var_poly,
+            e0_var_poly_gauss,
             e0_shoot,
             e0_fd,
         ],
         "energies_e1": [
             e1_pert_1st,
             e1_pert_2nd,
-            e1_var,
+            e1_var_gauss,
+            e1_var_exp,
+            e1_var_poly,
+            e1_var_poly_gauss,
             e1_shoot,
             e1_fd,
         ],
         "methods_all": [
             "Perturbation (1st)",
             "Perturbation (2nd)",
-            "Variational",
+            "Variational (Gauss)",
+            "Variational (Exp)",
+            "Variational (Poly-Exp)",
+            "Variational (Poly-Gauss)",
             "Shooting IVP",
             "Numerical: Matrix FD",
         ],
