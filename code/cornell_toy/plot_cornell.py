@@ -1,14 +1,13 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-import sys
 import csv
 from scipy.integrate import simpson
-from qho_osc import run_comparisons, SIGMA
+from cornell_osc import run_comparisons, ALPHA, B, C, EPSILON
 
 
 def create_showcase():
-    print("Gathering data from qho_osc.py...")
+    print("Gathering data from cornell_osc.py...")
     results = run_comparisons()
 
     x = results["x"]
@@ -27,20 +26,14 @@ def create_showcase():
     params1_poly_gauss = results["params1_poly_gauss"]
 
     # --- Calculate Variational Wavefunctions (Probability Densities) ---
-    # Ground state: Ansatz: (2alpha/pi)^1/4 * e^(-alpha x^2)
     psi0_var = (2 * alpha0 / np.pi) ** 0.25 * np.exp(-alpha0 * x**2)
 
-    # First excited state: Ansatz: N * x * e^(-alpha x^2)
     N_var = np.sqrt(4 * alpha1 * np.sqrt(2 * alpha1 / np.pi))
     psi1_var = N_var * x * np.exp(-alpha1 * x**2)
 
-    # Exponential Ansatzes
-    # Ground state: N * e^(-alpha |x|) -> N = sqrt(alpha)
     psi0_exp = np.sqrt(alpha0_exp) * np.exp(-alpha0_exp * np.abs(x))
-    # First excited state: N * x * e^(-alpha |x|) -> N = sqrt(2 * alpha^3)
     psi1_exp = np.sqrt(2 * alpha1_exp**3) * x * np.exp(-alpha1_exp * np.abs(x))
 
-    # Helper functions for arbitrary power series evaluation
     def build_even_poly(x_val, coeffs):
         poly = np.ones_like(x_val)
         for i, c in enumerate(coeffs):
@@ -53,7 +46,6 @@ def create_showcase():
             poly = poly + c * x_val ** (2 * (i + 1) + 1)
         return poly
 
-    # Polynomial-Exponential Ansatzes (Numerical Normalization)
     psi0_poly_unnorm = np.exp(-params0_poly[0] * np.abs(x)) * build_even_poly(
         x, params0_poly[1:]
     )
@@ -66,7 +58,6 @@ def create_showcase():
     norm1_poly = np.sqrt(simpson(y=psi1_poly_unnorm**2, x=x))
     psi1_poly = psi1_poly_unnorm / norm1_poly
 
-    # Polynomial-Gaussian Ansatzes (Numerical Normalization)
     psi0_poly_gauss_unnorm = np.exp(-params0_poly_gauss[0] * x**2) * build_even_poly(
         x, params0_poly_gauss[1:]
     )
@@ -81,15 +72,18 @@ def create_showcase():
 
     # --- Setup the Figure ---
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-    fig.suptitle(f"Quantum Harmonic Oscillator Showcase (σ = {SIGMA})", fontsize=16)
+    fig.suptitle(
+        f"1D Softened Cornell Potential Showcase (α={ALPHA}, b={B}, c={C}, ε={EPSILON})",
+        fontsize=16,
+    )
 
     # ==========================================
     # SUBPLOT 1: Potential and Wavefunctions
     # ==========================================
-    # Plot the potential V(x)
-    ax1.plot(x, v_total, color="black", lw=2, label="V(x) = 1/2 mω²x² + σx⁴")
+    ax1.plot(
+        x, v_total, color="black", lw=2, label="V(x) = -(4/3)α/√(x²+ε²) + b|x| + c"
+    )
 
-    # Plot Energy levels
     ax1.axhline(
         e0_fd, color="blue", linestyle="--", alpha=0.5, label=f"E_0 = {e0_fd:.3f}"
     )
@@ -97,8 +91,7 @@ def create_showcase():
         e1_fd, color="red", linestyle="--", alpha=0.5, label=f"E_1 = {e1_fd:.3f}"
     )
 
-    # Plot probability densities scaled and shifted up by their respective energy levels
-    scale = 0.5  # scaling factor purely for visual clarity against the potential curve
+    scale = 0.5
     ax1.fill_between(
         x, e0_fd, e0_fd + scale * psi0_fd**2, color="blue", alpha=0.3, label="|ψ_0 FD|²"
     )
@@ -171,10 +164,10 @@ def create_showcase():
         label="|ψ_1 Var (Poly-Gauss)|²",
     )
 
-    # Zoom in to the relevant part of the potential well
-    display_limit = 4.0 / (1.0 + SIGMA) ** 0.25
+    display_limit = 6.0 / max(0.5, B)
     ax1.set_xlim(-display_limit, display_limit)
-    ax1.set_ylim(0, e1_fd + 1.5)
+    # Softened well goes down to roughly -(4/3)*ALPHA/EPSILON + C.
+    ax1.set_ylim(-(4.0 / 3.0) * ALPHA / EPSILON + C - 0.5, e1_fd + 1.5)
     ax1.set_title("Wavefunction Probability Densities vs Potential")
     ax1.set_xlabel("Position (x)")
     ax1.set_ylabel("Energy")
@@ -211,14 +204,15 @@ def create_showcase():
     ax2.legend()
 
     plt.tight_layout()
-    plt.savefig("results/figures/qho_showcase.png", dpi=300)
-    print("\nShowcase image successfully generated and saved as 'qho_showcase.png'")
+    os.makedirs("results/figures", exist_ok=True)
+    plt.savefig("results/figures/cornell_showcase.png", dpi=300)
+    print("\nShowcase image successfully generated and saved as 'cornell_showcase.png'")
 
     # ==========================================
     # EXPORT RESULTS TO CSV TABLE
     # ==========================================
     os.makedirs("results/tables", exist_ok=True)
-    csv_path = "results/tables/qho_numerical_results.csv"
+    csv_path = "results/tables/cornell_numerical_results.csv"
 
     with open(csv_path, mode="w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -243,13 +237,7 @@ def create_showcase():
                 str_err_e1 = f"{results['errors_e1'][i]:.2e}"
 
             writer.writerow(
-                [
-                    method,
-                    f"{e0_val:.5f}",
-                    f"{e1_val:.5f}",
-                    str_err_e0,
-                    str_err_e1,
-                ]
+                [method, f"{e0_val:.5f}", f"{e1_val:.5f}", str_err_e0, str_err_e1]
             )
 
     print(f"Numerical results table successfully generated and saved as '{csv_path}'")
