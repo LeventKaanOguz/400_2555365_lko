@@ -1,6 +1,15 @@
 import numpy as np
 from scipy.integrate import simpson
 from scipy.optimize import minimize, differential_evolution
+from scipy.linalg import eigh
+
+
+def normalize_ansatz(ansatz, params, x_grid):
+    psi = ansatz(x_grid, *params)
+    norm = np.sqrt(simpson(y=psi**2, x=x_grid))
+    if norm <= 0:
+        return None
+    return psi / norm
 
 
 def compute_expectation_value(ansatz, params, x_grid, v_grid, hbar, mass):
@@ -77,3 +86,57 @@ def optimize_ansatz(
     else:
         raise ValueError(f"Unknown optimization method: {method}")
     return res.x, res.fun
+
+
+def solve_gem(x_grid, v_grid, hbar, mass, n_basis, r_min, r_max, l=0):
+    """
+    Solves the radial Schrödinger equation using the Gaussian Expansion Method (GEM).
+    Basis parameters nu_i are distributed geometrically.
+    """
+    # 1. Setup the Gaussian widths (geometric progression)
+    a = (r_max / r_min) ** (2.0 / (n_basis - 1)) if n_basis > 1 else 1.0
+    nu = [1.0 / (r_min**2 * a**i) for i in range(n_basis)]
+
+    # 2. Construct non-orthogonal basis functions (reduced radial u_i(r) = r * R_i(r))
+    # For general angular momentum l, R(r) ~ r^l e^{-nu r^2}, so u(r) ~ r^{l+1} e^{-nu r^2}
+    basis = []
+    dbasis = []
+    for n in nu:
+        u = x_grid**(l + 1) * np.exp(-n * x_grid**2)
+        du = ((l + 1) * x_grid**l - 2 * n * x_grid**(l + 2)) * np.exp(-n * x_grid**2)
+
+        # Normalize individual basis elements numerically for stability
+        norm = np.sqrt(simpson(y=u**2, x=x_grid))
+        basis.append(u / norm)
+        dbasis.append(du / norm)
+
+    # 3. Compute Hamiltonian (H) and Overlap (S) Matrices
+    S = np.zeros((n_basis, n_basis))
+    H = np.zeros((n_basis, n_basis))
+
+    for i in range(n_basis):
+        for j in range(i, n_basis):
+            # Overlap S_ij
+            S_ij = simpson(y=basis[i] * basis[j], x=x_grid)
+            S[i, j] = S[j, i] = S_ij
+
+            # Kinetic Energy T_ij
+            T_ij = (hbar**2 / (2 * mass)) * simpson(y=dbasis[i] * dbasis[j], x=x_grid)
+
+            # Potential Energy V_ij
+            V_ij = simpson(y=basis[i] * v_grid * basis[j], x=x_grid)
+
+            H_ij = T_ij + V_ij
+            H[i, j] = H[j, i] = H_ij
+
+    # 4. Solve the Generalized Eigenvalue Problem (H c = E S c)
+    evals, evecs = eigh(H, S)
+
+    # 5. Construct full eigenfunctions
+    wavefunctions = np.zeros((len(x_grid), len(evals)))
+    for state_idx in range(len(evals)):
+        c = evecs[:, state_idx]
+        u_full = sum(c[i] * basis[i] for i in range(n_basis))
+        wavefunctions[:, state_idx] = normalize_ansatz(lambda r, *p: u_full, [], x_grid)
+
+    return evals, wavefunctions

@@ -26,7 +26,9 @@ def solve_fd(x_grid, v_grid, hbar, mass):
     return evals, psi_fd
 
 
-def solve_shooting(v_func, E_guess, parity, L, hbar, mass, bracket_margin=0.1):
+def solve_shooting(
+    v_func, E_guess, parity, L, hbar, mass, bracket_margin=0.1, is_radial=False, x0=0.0
+):
     def schrodinger_ode(x_val, y, E):
         psi, dpsi = y
         V = v_func(x_val)
@@ -34,7 +36,10 @@ def solve_shooting(v_func, E_guess, parity, L, hbar, mass, bracket_margin=0.1):
         return [dpsi, d2psi]
 
     def shoot(E, parity):
-        y0 = [1.0, 0.0] if parity == "even" else [0.0, 1.0]
+        if is_radial:
+            y0 = [x0, 1.0]
+        else:
+            y0 = [1.0, 0.0] if parity == "even" else [0.0, 1.0]
 
         def divergence_event(x_val, y, E):
             return 1e50 - np.abs(y[0])
@@ -45,7 +50,7 @@ def solve_shooting(v_func, E_guess, parity, L, hbar, mass, bracket_margin=0.1):
             warnings.simplefilter("ignore")
             sol = solve_ivp(
                 schrodinger_ode,
-                [0, L],
+                [x0, L],
                 y0,
                 args=(E,),
                 rtol=1e-8,
