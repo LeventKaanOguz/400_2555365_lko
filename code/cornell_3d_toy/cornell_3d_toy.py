@@ -96,10 +96,10 @@ def run_comparisons():
         return r_val * (2.0 - beta * r_val) * np.exp(-0.5 * beta * r_val)
 
     def ansatz_1s_pow(r_val, r_n):
-        return r_val * (r_val**0) * np.exp(-(r_val / r_n)**2)
+        return r_val * (r_val**0) * np.exp(-((r_val / r_n) ** 2))
 
     def ansatz_2s_pow(r_val, r_n):
-        return r_val * (r_val**1) * np.exp(-(r_val / r_n)**2)
+        return r_val * (r_val**1) * np.exp(-((r_val / r_n) ** 2))
 
     res1s = minimize(
         lambda p: compute_expectation_value(ansatz_1s, p, r, v_total, HBAR, MU),
@@ -242,7 +242,7 @@ def run_comparisons():
     print(f"{'Numerical: Shooting IVP':<25} | {e1s_shoot:<20.6f} | {e2s_shoot:.6f}")
 
     print("\n--- Physical Meson Mass Estimates (M = 2*m_q + E) ---")
-    mass_header = f"{'Calculation Method':<25} | {'Mass 1S (eta_b) [GeV]':<25} | {'Diff [MeV]':<15} | {'Mass 2S (Upsilon) [GeV]':<25} | {'Diff [MeV]':<15}"
+    mass_header = f"{'Calculation Method':<25} | {'Mass 1S [GeV]':<15} | {'Diff [MeV]':<12} | {'% Error':<10} | {'Mass 2S [GeV]':<15} | {'Diff [MeV]':<12} | {'% Error':<10}"
     print("-" * len(mass_header))
     print(mass_header)
     print("-" * len(mass_header))
@@ -282,11 +282,16 @@ def run_comparisons():
     masses_2s = [2 * M_Q + e for e in energies_2s]
     mass_diffs_1s = [(m - EXP_MASS_1S) * 1000 for m in masses_1s]
     mass_diffs_2s = [(m - EXP_MASS_2S) * 1000 for m in masses_2s]
+    mass_pct_errors_1s = [abs(m - EXP_MASS_1S) / EXP_MASS_1S * 100 for m in masses_1s]
+    mass_pct_errors_2s = [abs(m - EXP_MASS_2S) / EXP_MASS_2S * 100 for m in masses_2s]
 
     for i, method in enumerate(methods_all):
         m1, d1 = masses_1s[i], mass_diffs_1s[i]
         m2, d2 = masses_2s[i], mass_diffs_2s[i]
-        print(f"{method:<25} | {m1:<25.4f} | {d1:<15.1f} | {m2:<25.4f} | {d2:<15.1f}")
+        p1, p2 = mass_pct_errors_1s[i], mass_pct_errors_2s[i]
+        print(
+            f"{method:<25} | {m1:<15.4f} | {d1:<12.1f} | {p1:<10.3f} | {m2:<15.4f} | {d2:<12.1f} | {p2:<10.3f}"
+        )
     print()
 
     return {
@@ -342,6 +347,8 @@ def run_comparisons():
         "masses_2s": masses_2s,
         "mass_diffs_1s": mass_diffs_1s,
         "mass_diffs_2s": mass_diffs_2s,
+        "mass_pct_errors_1s": mass_pct_errors_1s,
+        "mass_pct_errors_2s": mass_pct_errors_2s,
         "methods_all": methods_all,
     }
 

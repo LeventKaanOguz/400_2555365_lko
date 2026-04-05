@@ -25,16 +25,13 @@ def create_showcase():
     u1s_gem = results["u1s_gem"]
     u2s_gem = results["u2s_gem"]
 
-    # --- Setup the Figure ---
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-    fig.suptitle(
-        f"3D Radial Cornell Potential Showcase (α_s={ALPHA_S}, b={B}, c={C})",
-        fontsize=16,
-    )
+    # --- Setup Output Directory ---
+    fig_dir = "results/figures/cornell_3d_toy"
 
     # ==========================================
-    # SUBPLOT 1: Potential and Wavefunctions
+    # PLOT 1: Potential and Wavefunctions
     # ==========================================
+    fig1, ax1 = plt.subplots(figsize=(10, 6))
     ax1.plot(r, v_total, color="black", lw=2, label="V(r) = -(4/3)α_s/r + br + c")
 
     ax1.axhline(
@@ -130,14 +127,20 @@ def create_showcase():
     display_limit = 6.0 / max(0.5, B)
     ax1.set_xlim(0, display_limit)
     ax1.set_ylim(-3.0, e2s_fd + 1.5)  # Constrained well lower limit
-    ax1.set_title("Reduced Radial Wavefunction Densities vs Potential")
+    ax1.set_title(
+        f"Reduced Radial Wavefunction Densities vs Potential\n(α_s={ALPHA_S}, b={B}, c={C})"
+    )
     ax1.set_xlabel("Radius (r)")
     ax1.set_ylabel("Energy")
     ax1.legend(loc="upper right", fontsize="small")
 
+    fig1.tight_layout()
+    fig1.savefig(f"{fig_dir}/wavefunctions.png", dpi=300)
+
     # ==========================================
-    # SUBPLOT 2: Error Analysis Bar Chart
+    # PLOT 2: Error Analysis Bar Chart
     # ==========================================
+    fig2, ax2 = plt.subplots(figsize=(10, 6))
     x_pos = np.arange(len(results["methods"]))
     width = 0.35
 
@@ -165,12 +168,42 @@ def create_showcase():
     ax2.set_ylabel("Absolute Error (Log Scale)")
     ax2.legend()
 
-    plt.tight_layout()
-    os.makedirs("results/figures", exist_ok=True)
-    plt.savefig("results/figures/cornell_3d_toy_showcase.png", dpi=300)
-    print(
-        "\nShowcase image successfully generated and saved as 'cornell_3d_toy_showcase.png'"
+    fig2.tight_layout()
+    fig2.savefig(f"{fig_dir}/energy_errors.png", dpi=300)
+
+    # ==========================================
+    # PLOT 3: Mass Percent Error Bar Chart
+    # ==========================================
+    fig3, ax3 = plt.subplots(figsize=(10, 6))
+    x_pos_all = np.arange(len(results["methods_all"]))
+
+    ax3.bar(
+        x_pos_all - width / 2,
+        results["mass_pct_errors_1s"],
+        width,
+        label="1S Mass % Error",
+        color="purple",
+        alpha=0.7,
     )
+    ax3.bar(
+        x_pos_all + width / 2,
+        results["mass_pct_errors_2s"],
+        width,
+        label="2S Mass % Error",
+        color="orange",
+        alpha=0.7,
+    )
+
+    ax3.set_yscale("log")
+    ax3.set_xticks(x_pos_all)
+    ax3.set_xticklabels(results["methods_all"], rotation=15, ha="right")
+    ax3.set_title("Mass Percent Error vs Experimental Data (Log Scale)")
+    ax3.set_ylabel("Percent Error (%)")
+    ax3.legend()
+
+    fig3.tight_layout()
+    fig3.savefig(f"{fig_dir}/mass_errors.png", dpi=300)
+    print(f"\nPlots successfully generated and saved in '{fig_dir}/'")
 
     # ==========================================
     # EXPORT RESULTS TO CSV TABLE
@@ -187,8 +220,10 @@ def create_showcase():
                 "E_2S (GeV)",
                 "Mass 1S (GeV)",
                 "Mass 1S Diff (MeV)",
+                "Mass 1S % Error",
                 "Mass 2S (GeV)",
                 "Mass 2S Diff (MeV)",
+                "Mass 2S % Error",
                 "E_1S Absolute Error",
                 "E_2S Absolute Error",
             ]
@@ -201,6 +236,8 @@ def create_showcase():
             m2s_val = results["masses_2s"][i]
             d1s_val = results["mass_diffs_1s"][i]
             d2s_val = results["mass_diffs_2s"][i]
+            p1s_val = results["mass_pct_errors_1s"][i]
+            p2s_val = results["mass_pct_errors_2s"][i]
 
             str_err_1s = (
                 "-"
@@ -220,8 +257,10 @@ def create_showcase():
                     f"{e2s_val:.5f}",
                     f"{m1s_val:.5f}",
                     f"{d1s_val:.2f}",
+                    f"{p1s_val:.3f}%",
                     f"{m2s_val:.5f}",
                     f"{d2s_val:.2f}",
+                    f"{p2s_val:.3f}%",
                     str_err_1s,
                     str_err_2s,
                 ]
