@@ -95,6 +95,12 @@ def run_comparisons():
         # Hydrogenic 2s (n=2, l=0): L^(1)_1(x) = 2 - x
         return r_val * (2.0 - beta * r_val) * np.exp(-0.5 * beta * r_val)
 
+    def ansatz_1s_pow(r_val, r_n):
+        return r_val * (r_val**0) * np.exp(-(r_val / r_n)**2)
+
+    def ansatz_2s_pow(r_val, r_n):
+        return r_val * (r_val**1) * np.exp(-(r_val / r_n)**2)
+
     res1s = minimize(
         lambda p: compute_expectation_value(ansatz_1s, p, r, v_total, HBAR, MU),
         x0=[1.0],
@@ -134,6 +140,26 @@ def run_comparisons():
     e2s_var_hyd = res2s_hyd.fun
     u2s_var_hyd = normalize_ansatz(ansatz_2s_hyd, [beta_2s_hyd_opt], r)
     e2s_var_hyd += calc_hf_shift(u2s_var_hyd, spin=1)
+
+    res1s_pow = minimize(
+        lambda p: compute_expectation_value(ansatz_1s_pow, p, r, v_total, HBAR, MU),
+        x0=[1.0],
+        bounds=[(0.01, 20.0)],
+    )
+    rn_1s_opt = res1s_pow.x[0]
+    e1s_var_pow = res1s_pow.fun
+    u1s_var_pow = normalize_ansatz(ansatz_1s_pow, [rn_1s_opt], r)
+    e1s_var_pow += calc_hf_shift(u1s_var_pow, spin=0)
+
+    res2s_pow = minimize(
+        lambda p: compute_expectation_value(ansatz_2s_pow, p, r, v_total, HBAR, MU),
+        x0=[1.0],
+        bounds=[(0.01, 20.0)],
+    )
+    rn_2s_opt = res2s_pow.x[0]
+    e2s_var_pow = res2s_pow.fun
+    u2s_var_pow = normalize_ansatz(ansatz_2s_pow, [rn_2s_opt], r)
+    e2s_var_pow += calc_hf_shift(u2s_var_pow, spin=1)
 
     # ==========================================
     # 3. GAUSSIAN EXPANSION METHOD (GEM)
@@ -210,6 +236,7 @@ def run_comparisons():
     print(
         f"{'Variational (Hydrogenic)':<25} | {e1s_var_hyd:<20.6f} | {e2s_var_hyd:.6f}"
     )
+    print(f"{'Variational (Power)':<25} | {e1s_var_pow:<20.6f} | {e2s_var_pow:.6f}")
     print(f"{'Variational (GEM)':<25} | {e1s_gem:<20.6f} | {e2s_gem:.6f}")
     print(f"{'Numerical: Matrix FD':<25} | {e1s_fd:<20.6f} | {e2s_fd:.6f}")
     print(f"{'Numerical: Shooting IVP':<25} | {e1s_shoot:<20.6f} | {e2s_shoot:.6f}")
@@ -225,6 +252,7 @@ def run_comparisons():
         "Perturbation (2nd)",
         "Variational (Harmonic)",
         "Variational (Hydrogenic)",
+        "Variational (Power)",
         "Variational (GEM)",
         "Shooting IVP",
         "Numerical: Matrix FD",
@@ -234,6 +262,7 @@ def run_comparisons():
         e1s_pert_2nd,
         e1s_var,
         e1s_var_hyd,
+        e1s_var_pow,
         e1s_gem,
         e1s_shoot,
         e1s_fd,
@@ -243,6 +272,7 @@ def run_comparisons():
         e2s_pert_2nd,
         e2s_var,
         e2s_var_hyd,
+        e2s_var_pow,
         e2s_gem,
         e2s_shoot,
         e2s_fd,
@@ -271,6 +301,8 @@ def run_comparisons():
         "u2s_var": u2s_var,
         "u1s_var_hyd": u1s_var_hyd,
         "u2s_var_hyd": u2s_var_hyd,
+        "u1s_var_pow": u1s_var_pow,
+        "u2s_var_pow": u2s_var_pow,
         "u1s_gem": u1s_gem,
         "u2s_gem": u2s_gem,
         "beta_1s": beta_1s_opt,
@@ -282,6 +314,7 @@ def run_comparisons():
             abs(e1s_pert_2nd - e1s_fd),
             abs(e1s_var - e1s_fd),
             abs(e1s_var_hyd - e1s_fd),
+            abs(e1s_var_pow - e1s_fd),
             abs(e1s_gem - e1s_fd),
             abs(e1s_shoot - e1s_fd),
         ],
@@ -290,6 +323,7 @@ def run_comparisons():
             abs(e2s_pert_2nd - e2s_fd),
             abs(e2s_var - e2s_fd),
             abs(e2s_var_hyd - e2s_fd),
+            abs(e2s_var_pow - e2s_fd),
             abs(e2s_gem - e2s_fd),
             abs(e2s_shoot - e2s_fd),
         ],
@@ -298,6 +332,7 @@ def run_comparisons():
             "Perturbation (2nd)",
             "Variational (Harmonic)",
             "Variational (Hydrogenic)",
+            "Variational (Power)",
             "Variational (GEM)",
             "Shooting IVP",
         ],

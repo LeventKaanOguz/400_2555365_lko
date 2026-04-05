@@ -20,6 +20,8 @@ def create_showcase():
     u2s_var = results["u2s_var"]
     u1s_var_hyd = results["u1s_var_hyd"]
     u2s_var_hyd = results["u2s_var_hyd"]
+    u1s_var_pow = results["u1s_var_pow"]
+    u2s_var_pow = results["u2s_var_pow"]
     u1s_gem = results["u1s_gem"]
     u2s_gem = results["u2s_gem"]
 
@@ -69,6 +71,14 @@ def create_showcase():
     )
     ax1.plot(
         r,
+        e1s_fd + scale * u1s_var_pow**2,
+        color="olive",
+        linestyle="-.",
+        lw=2.0,
+        label="|u_1S Var (Power)|²",
+    )
+    ax1.plot(
+        r,
         e1s_fd + scale * u1s_gem**2,
         color="purple",
         linestyle="--",
@@ -99,6 +109,14 @@ def create_showcase():
         linestyle="-.",
         lw=2.0,
         label="|u_2S Var (Hydrogenic)|²",
+    )
+    ax1.plot(
+        r,
+        e2s_fd + scale * u2s_var_pow**2,
+        color="teal",
+        linestyle="-.",
+        lw=2.0,
+        label="|u_2S Var (Power)|²",
     )
     ax1.plot(
         r,

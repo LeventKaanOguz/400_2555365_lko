@@ -5,6 +5,23 @@ from scipy.linalg import eigh
 
 
 def normalize_ansatz(ansatz, params, x_grid):
+    """
+    Normalize an unnormalized variational ansatz wavefunction.
+
+    Parameters
+    ----------
+    ansatz : callable
+        The unnormalized trial wavefunction function.
+    params : list
+        Parameters to pass to the ansatz function.
+    x_grid : numpy.ndarray
+        The spatial grid array.
+
+    Returns
+    -------
+    numpy.ndarray or None
+        The normalized wavefunction array, or None if not normalizable (norm <= 0).
+    """
     psi = ansatz(x_grid, *params)
     norm = np.sqrt(simpson(y=psi**2, x=x_grid))
     if norm <= 0:
@@ -13,6 +30,32 @@ def normalize_ansatz(ansatz, params, x_grid):
 
 
 def compute_expectation_value(ansatz, params, x_grid, v_grid, hbar, mass):
+    """
+    Compute the expected total energy value for a given variational ansatz.
+
+    Calculates the expectation values of kinetic and potential energies
+    using numerical integration over the spatial grid.
+
+    Parameters
+    ----------
+    ansatz : callable
+        The unnormalized trial wavefunction function.
+    params : list
+        Parameters to evaluate the ansatz function.
+    x_grid : numpy.ndarray
+        The spatial grid array.
+    v_grid : numpy.ndarray
+        The potential energy evaluated on the spatial grid.
+    hbar : float
+        Reduced Planck constant.
+    mass : float
+        Mass of the particle (or reduced mass of the system).
+
+    Returns
+    -------
+    float
+        The total expected energy value, or infinity if not normalizable.
+    """
     psi = ansatz(x_grid, *params)
     norm = simpson(y=psi**2, x=x_grid)
     if norm <= 0:
@@ -72,6 +115,33 @@ def ansatz_1_poly_gauss(x_val, alpha, *coeffs):
 def optimize_ansatz(
     ansatz, x_grid, v_grid, hbar, mass, x0=None, bounds=None, method="minimize"
 ):
+    """
+    Optimize the parameters of a variational ansatz to minimize expected energy.
+
+    Parameters
+    ----------
+    ansatz : callable
+        The trial wavefunction function.
+    x_grid : numpy.ndarray
+        The spatial grid array.
+    v_grid : numpy.ndarray
+        The potential energy array.
+    hbar : float
+        Reduced Planck constant.
+    mass : float
+        Mass of the particle.
+    x0 : list, optional
+        Initial parameter guess for the optimizer.
+    bounds : list of tuples, optional
+        Bounds for the parameters to constrain optimization.
+    method : str, optional
+        Optimization routine to use ('minimize' or 'differential_evolution').
+
+    Returns
+    -------
+    tuple
+        (optimized_params, minimized_energy): The best parameters and resulting energy.
+    """
     if method == "minimize":
         res = minimize(
             lambda p: compute_expectation_value(ansatz, p, x_grid, v_grid, hbar, mass),
@@ -91,7 +161,33 @@ def optimize_ansatz(
 def solve_gem(x_grid, v_grid, hbar, mass, n_basis, r_min, r_max, l=0):
     """
     Solves the radial Schrödinger equation using the Gaussian Expansion Method (GEM).
-    Basis parameters nu_i are distributed geometrically.
+
+    Basis parameters `nu_i` are distributed geometrically between `r_min` and `r_max`
+    to accurately model both short-range interactions and long-range tails.
+
+    Parameters
+    ----------
+    x_grid : numpy.ndarray
+        The spatial grid array.
+    v_grid : numpy.ndarray
+        The potential energy array evaluated on the grid.
+    hbar : float
+        Reduced Planck constant.
+    mass : float
+        Mass of the particle (or reduced mass).
+    n_basis : int
+        The number of Gaussian basis functions to construct.
+    r_min : float
+        The minimum radial limit parameter for basis geometric scaling.
+    r_max : float
+        The maximum radial limit parameter for basis geometric scaling.
+    l : int, optional
+        Orbital angular momentum quantum number. Default is 0.
+
+    Returns
+    -------
+    tuple
+        (evals, wavefunctions): Arrays of eigenvalues and corresponding eigenvectors (columns).
     """
     # 1. Setup the Gaussian widths (geometric progression)
     a = (r_max / r_min) ** (2.0 / (n_basis - 1)) if n_basis > 1 else 1.0
@@ -102,8 +198,8 @@ def solve_gem(x_grid, v_grid, hbar, mass, n_basis, r_min, r_max, l=0):
     basis = []
     dbasis = []
     for n in nu:
-        u = x_grid**(l + 1) * np.exp(-n * x_grid**2)
-        du = ((l + 1) * x_grid**l - 2 * n * x_grid**(l + 2)) * np.exp(-n * x_grid**2)
+        u = x_grid ** (l + 1) * np.exp(-n * x_grid**2)
+        du = ((l + 1) * x_grid**l - 2 * n * x_grid ** (l + 2)) * np.exp(-n * x_grid**2)
 
         # Normalize individual basis elements numerically for stability
         norm = np.sqrt(simpson(y=u**2, x=x_grid))
