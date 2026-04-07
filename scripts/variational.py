@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.integrate import simpson
+from scipy.integrate import simpson, quad
 from scipy.optimize import minimize, differential_evolution
 from scipy.linalg import eigh
 
@@ -187,7 +187,7 @@ def solve_gem(x_grid, v_grid, hbar, mass, n_basis, r_min, r_max, l=0):
     Returns
     -------
     tuple
-        (evals, wavefunctions): Arrays of eigenvalues and corresponding eigenvectors (columns).
+        (evals, wavefunctions, evecs, nu): Arrays of eigenvalues, wavefunctions, basis coefficients, and Gaussian widths.
     """
     # 1. Setup the Gaussian widths (geometric progression)
     a = (r_max / r_min) ** (2.0 / (n_basis - 1)) if n_basis > 1 else 1.0
@@ -226,7 +226,12 @@ def solve_gem(x_grid, v_grid, hbar, mass, n_basis, r_min, r_max, l=0):
             H[i, j] = H[j, i] = H_ij
 
     # 4. Solve the Generalized Eigenvalue Problem (H c = E S c)
-    evals, evecs = eigh(H, S)
+    try:
+        evals, evecs = eigh(H, S)
+    except np.linalg.LinAlgError:
+        # Regularize the overlap matrix if numerical noise breaks positive definiteness
+        S += np.eye(n_basis) * 1e-9
+        evals, evecs = eigh(H, S)
 
     # 5. Construct full eigenfunctions
     wavefunctions = np.zeros((len(x_grid), len(evals)))
@@ -234,5 +239,5 @@ def solve_gem(x_grid, v_grid, hbar, mass, n_basis, r_min, r_max, l=0):
         c = evecs[:, state_idx]
         u_full = sum(c[i] * basis[i] for i in range(n_basis))
         wavefunctions[:, state_idx] = normalize_ansatz(lambda r, *p: u_full, [], x_grid)
-
-    return evals, wavefunctions
+    print(f"GEM: Found {len(evals)} eigenvalues, lowest 5: {evals[:5]}")
+    return evals, wavefunctions, evecs, nu
