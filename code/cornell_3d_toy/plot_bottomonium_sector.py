@@ -2,11 +2,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import csv
-from cornell_3d_toy import run_comparisons, ALPHA_S, B, C
+from bottomonium_sector import run_comparisons, ALPHA_S, B, C
 
 
 def create_showcase():
-    print("Gathering data from cornell_3d_toy.py...")
+    print("Gathering data from bottomonium_sector.py...")
     results = run_comparisons()
 
     r = results["r"]
@@ -25,7 +25,7 @@ def create_showcase():
     u1d_gem = results["u_gem_2"][:, 0]
 
     # --- Setup Output Directory ---
-    fig_dir = "results/figures/cornell_3d_toy"
+    fig_dir = "results/figures/bottomonium_sector"
     os.makedirs(fig_dir, exist_ok=True)
 
     scale = 0.6  # Scale factor to make wavefunctions visible on the energy axis
@@ -196,10 +196,10 @@ def create_showcase():
         fig3.savefig(f"{fig_dir}/mass_comparison_literature.png", dpi=300)
 
     # ==========================================
-    # PLOT 4: GEM Expansion Basis Functions
+    # PLOT 4: GEM Expansion Basis Functions (All Bases for 1S & 2S)
     # ==========================================
     if "nu_gem" in results:
-        fig4, ax4 = plt.subplots(figsize=(10, 6))
+        fig4, (ax4_1, ax4_2) = plt.subplots(1, 2, figsize=(18, 8))
         from scipy.integrate import simpson
 
         nu_gem = results["nu_gem"]
@@ -208,38 +208,59 @@ def create_showcase():
 
         basis = []
         for n in nu_gem:
-            # Reconstruct the normalized basis functions for l=0 (1S)
+            # Reconstruct the normalized basis functions for l=0 (1S & 2S)
             u = r * np.exp(-n * r**2)
             norm = np.sqrt(simpson(y=u**2, x=r))
             basis.append(u / norm)
 
-        ax4.plot(r, u1s_gem, color="black", lw=3, label="Total 1S Wavefunction (GEM)")
+        # 1S State Plot
+        ax4_1.plot(r, u1s_gem, color="black", lw=3, label="Total 1S Wavefunction (GEM)")
 
-        # Plot up to the 10 most significant components to avoid cluttering the visual
-        components = [(i, evecs_gem[i, 0] * basis[i]) for i in range(n_basis)]
-        components.sort(key=lambda x: np.max(np.abs(x[1])), reverse=True)
+        components_1s = [(i, evecs_gem[i, 0] * basis[i]) for i in range(n_basis)]
+        # Sort components solely to order the legend by prominence
+        components_1s.sort(key=lambda x: np.max(np.abs(x[1])), reverse=True)
 
-        for i, comp in components[:10]:
-            if np.max(np.abs(comp)) > 0.01:
-                ax4.plot(
-                    r,
-                    comp,
-                    linestyle="--",
-                    alpha=0.7,
-                    label=f"Basis {i} (c={evecs_gem[i, 0]:.2f}, $\\nu$={nu_gem[i]:.1e})",
-                )
+        for i, comp in components_1s:
+            ax4_1.plot(
+                r,
+                comp,
+                linestyle="--",
+                alpha=0.7,
+                label=f"Basis {i:02d} (c={evecs_gem[i, 0]:.3f}, $\\nu$={nu_gem[i]:.1e})",
+            )
 
-        ax4.set_xlim(0, 4.0 / max(0.5, B))
-        ax4.set_title(
-            "Gaussian Expansion Method (GEM) - 1S Basis Components", fontsize=14
-        )
-        ax4.set_xlabel("Radius $r$", fontsize=12)
-        ax4.set_ylabel("Amplitude $u(r)$", fontsize=12)
-        ax4.legend(loc="upper right", fontsize=9, ncol=2)
-        ax4.grid(True, alpha=0.3)
+        ax4_1.set_xlim(0, 4.0 / max(0.5, B))
+        ax4_1.set_title("Gaussian Expansion Method - 1S Basis Components", fontsize=14)
+        ax4_1.set_xlabel("Radius $r$ (fm/GeV$^{-1}$)", fontsize=12)
+        ax4_1.set_ylabel("Amplitude $u(r)$", fontsize=12)
+        ax4_1.legend(loc="center left", bbox_to_anchor=(1, 0.5), fontsize=8)
+        ax4_1.grid(True, alpha=0.3)
+
+        # 2S State Plot
+        ax4_2.plot(r, u2s_gem, color="red", lw=3, label="Total 2S Wavefunction (GEM)")
+
+        components_2s = [(i, evecs_gem[i, 1] * basis[i]) for i in range(n_basis)]
+        # Sort components solely to order the legend by prominence
+        components_2s.sort(key=lambda x: np.max(np.abs(x[1])), reverse=True)
+
+        for i, comp in components_2s:
+            ax4_2.plot(
+                r,
+                comp,
+                linestyle="--",
+                alpha=0.7,
+                label=f"Basis {i:02d} (c={evecs_gem[i, 1]:.3f}, $\\nu$={nu_gem[i]:.1e})",
+            )
+
+        ax4_2.set_xlim(0, 6.0 / max(0.5, B))
+        ax4_2.set_title("Gaussian Expansion Method - 2S Basis Components", fontsize=14)
+        ax4_2.set_xlabel("Radius $r$ (fm/GeV$^{-1}$)", fontsize=12)
+        ax4_2.set_ylabel("Amplitude $u(r)$", fontsize=12)
+        ax4_2.legend(loc="center left", bbox_to_anchor=(1, 0.5), fontsize=8)
+        ax4_2.grid(True, alpha=0.3)
 
         fig4.tight_layout()
-        fig4.savefig(f"{fig_dir}/gem_expansion_1s.png", dpi=300)
+        fig4.savefig(f"{fig_dir}/gem_expansion_1s_2s.png", dpi=300)
 
     print(f"\nPlots successfully generated and saved in '{fig_dir}/'")
 
@@ -247,7 +268,7 @@ def create_showcase():
     # EXPORT RESULTS TO CSV TABLE
     # ==========================================
     os.makedirs("results/tables", exist_ok=True)
-    csv_path = "results/tables/cornell_3d_toy_numerical_results.csv"
+    csv_path = "results/tables/bottomonium_sector_numerical_results.csv"
 
     with open(csv_path, mode="w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)

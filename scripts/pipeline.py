@@ -1,7 +1,5 @@
 import numpy as np
 from scipy.optimize import minimize
-from scripts.numerical import solve_fd, solve_shooting
-from scripts.perturbation import calc_numerical_pert_energy
 from scripts.variational import normalize_ansatz, compute_expectation_value, solve_gem
 
 
@@ -59,33 +57,15 @@ def run_cornell_pipeline(
 
     print("--- Methodology Details ---")
     print(
-        "1. Perturbation Theory (Numerical): Treats the linear confinement term (b*r) as a"
-    )
-    print(
-        "   perturbation over the Coulombic potential. Calculates up to 2nd-order corrections."
-    )
-    print(
-        "2. Variational Method             : Optimizes trial wavefunctions (Harmonic, Hydrogenic,"
+        "1. Variational Method             : Optimizes trial wavefunctions (Harmonic, Hydrogenic,"
     )
     print("   Power) non-perturbatively using a smeared Gaussian spin-spin potential.")
     print(
-        "3. Gaussian Expansion Method (GEM): Solves the Generalized Eigenvalue Problem using 25"
+        "2. Gaussian Expansion Method (GEM): Solves the Generalized Eigenvalue Problem using 25"
     )
-    print("   non-orthogonal Gaussian basis functions distributed geometrically.")
-    print(
-        "4. Numerical Matrix FD            : Discretizes the Hamiltonian on a 1D radial grid"
-    )
-    print(
-        "   using Finite Differences and diagonalizes the resulting sparse tridiagonal matrix."
-    )
-    print(
-        "5. Shooting Method (IVP)          : Uses root-finding with scipy.integrate.solve_ivp"
-    )
-    print("   to meet the wavefunction boundary conditions at infinity.\n")
+    print("   non-orthogonal Gaussian basis functions distributed geometrically.\n")
 
-    print(
-        "Note: Spin-spin hyperfine splitting is applied perturbatively for most methods, but"
-    )
+    print("Note: Spin-spin hyperfine splitting is applied perturbatively for GEM, but")
     print(
         "non-perturbatively (smeared) for the Variational Method. S=0 is used for the 1S singlet,"
     )
@@ -122,30 +102,7 @@ def run_cornell_pipeline(
         return shift * ls_dot
 
     # ==========================================
-    # 1. PERTURBATION THEORY (NUMERICAL)
-    # ==========================================
-    v_unperturbed = -(4.0 / 3.0) * alpha_s / r + c
-    v_pert = b * r
-
-    evals_unperturbed, u_unperturbed = solve_fd(r, v_unperturbed, hbar, mu)
-
-    hf_shift_1s_pert = calc_hf_shift(u_unperturbed[:, 0], spin=0)
-    hf_shift_2s_pert = calc_hf_shift(u_unperturbed[:, 1], spin=1)
-
-    e1s_pert_1st, e1s_pert_2nd = calc_numerical_pert_energy(
-        0, r, v_pert, evals_unperturbed, u_unperturbed
-    )
-    e2s_pert_1st, e2s_pert_2nd = calc_numerical_pert_energy(
-        1, r, v_pert, evals_unperturbed, u_unperturbed
-    )
-
-    e1s_pert_1st += hf_shift_1s_pert
-    e1s_pert_2nd += hf_shift_1s_pert
-    e2s_pert_1st += hf_shift_2s_pert
-    e2s_pert_2nd += hf_shift_2s_pert
-
-    # ==========================================
-    # 2. VARIATIONAL METHOD (Radial Ansatz)
+    # 1. VARIATIONAL METHOD (Radial Ansatz)
     # ==========================================
     v_smeared_spin0 = v_cornell_3d_smeared(r, m_q, alpha_s, b, c, sigma_smear, spin=0)
     v_smeared_spin1 = v_cornell_3d_smeared(r, m_q, alpha_s, b, c, sigma_smear, spin=1)
@@ -240,7 +197,7 @@ def run_cornell_pipeline(
     print(f"Power Ansatz      | 1S r_n:  {rn_1s_opt:.6f} | 2S r_n:  {rn_2s_opt:.6f}\n")
 
     # ==========================================
-    # 3. GAUSSIAN EXPANSION METHOD (GEM)
+    # 2. GAUSSIAN EXPANSION METHOD (GEM)
     # ==========================================
     n_basis_gem = 25
     r_min_gem = 0.03
@@ -283,49 +240,6 @@ def run_cornell_pipeline(
     print()
 
     # ==========================================
-    # 4. NUMERICAL METHOD 1: FINITE DIFFERENCE
-    # ==========================================
-    evals_fd, u_fd = solve_fd(r, v_total, hbar, mu)
-    e1s_fd_bare = evals_fd[0]
-    e2s_fd_bare = evals_fd[1]
-    u1s_fd_arr = u_fd[:, 0]
-    u2s_fd_arr = u_fd[:, 1]
-
-    e1s_fd = e1s_fd_bare + calc_hf_shift(u1s_fd_arr, spin=0)
-    e2s_fd = e2s_fd_bare + calc_hf_shift(u2s_fd_arr, spin=1)
-
-    # ==========================================
-    # 5. NUMERICAL METHOD 2: SHOOTING METHOD
-    # ==========================================
-    bracket_margin1s = max(0.1, abs(e1s_fd_bare) * 0.05)
-    e1s_shoot_bare = solve_shooting(
-        lambda rv: v_cornell_3d(rv, alpha_s, b, c),
-        e1s_fd_bare,
-        None,
-        L,
-        hbar,
-        mu,
-        bracket_margin1s,
-        is_radial=True,
-        x0=dr,
-    )
-    e1s_shoot = e1s_shoot_bare + calc_hf_shift(u1s_fd_arr, spin=0)
-
-    bracket_margin2s = max(0.1, abs(e2s_fd_bare) * 0.05)
-    e2s_shoot_bare = solve_shooting(
-        lambda rv: v_cornell_3d(rv, alpha_s, b, c),
-        e2s_fd_bare,
-        None,
-        L,
-        hbar,
-        mu,
-        bracket_margin2s,
-        is_radial=True,
-        x0=dr,
-    )
-    e2s_shoot = e2s_shoot_bare + calc_hf_shift(u2s_fd_arr, spin=1)
-
-    # ==========================================
     # SUMMARY TABLE
     # ==========================================
     print("--- Energy Eigenvalue Comparison Table ---")
@@ -333,20 +247,12 @@ def run_cornell_pipeline(
     print("-" * len(header))
     print(header)
     print("-" * len(header))
-    print(
-        f"{'Perturbation Theory (1st)':<28} | {e1s_pert_1st:<20.6f} | {e2s_pert_1st:.6f}"
-    )
-    print(
-        f"{'Perturbation Theory (2nd)':<28} | {e1s_pert_2nd:<20.6f} | {e2s_pert_2nd:.6f}"
-    )
     print(f"{'Variational (Harmonic)':<28} | {e1s_var:<20.6f} | {e2s_var:.6f}")
     print(
         f"{'Variational (Hydrogenic)':<28} | {e1s_var_hyd:<20.6f} | {e2s_var_hyd:.6f}"
     )
     print(f"{'Variational (Power)':<28} | {e1s_var_pow:<20.6f} | {e2s_var_pow:.6f}")
     print(f"{'Variational (GEM)':<28} | {e1s_gem:<20.6f} | {e2s_gem:.6f}")
-    print(f"{'Numerical: Matrix FD':<28} | {e1s_fd:<20.6f} | {e2s_fd:.6f}")
-    print(f"{'Numerical: Shooting IVP':<28} | {e1s_shoot:<20.6f} | {e2s_shoot:.6f}")
 
     print("\n--- Physical Meson Mass Estimates (M = 2*m_q + E) ---")
     mass_header = f"{'Calculation Method':<28} | {'Mass 1S [GeV]':<15} | {'Diff [MeV]':<12} | {'% Error':<10} | {'Mass 2S [GeV]':<15} | {'Diff [MeV]':<12} | {'% Error':<10}"
@@ -355,34 +261,22 @@ def run_cornell_pipeline(
     print("-" * len(mass_header))
 
     methods_all = [
-        "Perturbation (1st)",
-        "Perturbation (2nd)",
         "Variational (Harmonic)",
         "Variational (Hydrogenic)",
         "Variational (Power)",
         "Variational (GEM)",
-        "Shooting IVP",
-        "Numerical: Matrix FD",
     ]
     energies_1s = [
-        e1s_pert_1st,
-        e1s_pert_2nd,
         e1s_var,
         e1s_var_hyd,
         e1s_var_pow,
         e1s_gem,
-        e1s_shoot,
-        e1s_fd,
     ]
     energies_2s = [
-        e2s_pert_1st,
-        e2s_pert_2nd,
         e2s_var,
         e2s_var_hyd,
         e2s_var_pow,
         e2s_gem,
-        e2s_shoot,
-        e2s_fd,
     ]
 
     masses_1s = [2 * m_q + e for e in energies_1s]
@@ -402,19 +296,19 @@ def run_cornell_pipeline(
 
     # Orbital Excitations for general outputs
     v_eff_1 = v_total + 1 * 2 * hbar**2 / (2.0 * mu * r**2)
-    evals_fd_1, u_fd_1 = solve_fd(r, v_eff_1, hbar, mu)
-
     v_eff_2 = v_total + 2 * 3 * hbar**2 / (2.0 * mu * r**2)
-    evals_fd_2, u_fd_2 = solve_fd(r, v_eff_2, hbar, mu)
+
+    evals_gem_1, u_gem_1, evecs_gem_1, nu_gem_1 = solve_gem(
+        r, v_eff_1, hbar, mu, n_basis=n_basis_gem, r_min=r_min_gem, r_max=r_max_gem, l=1
+    )
+    evals_gem_2, u_gem_2, evecs_gem_2, nu_gem_2 = solve_gem(
+        r, v_eff_2, hbar, mu, n_basis=n_basis_gem, r_min=r_min_gem, r_max=r_max_gem, l=2
+    )
 
     return {
         "r": r,
         "dr": dr,
         "v_total": v_total,
-        "e1s_fd": e1s_fd,
-        "e2s_fd": e2s_fd,
-        "u1s_fd": u1s_fd_arr,
-        "u2s_fd": u2s_fd_arr,
         "u1s_var": u1s_var,
         "u2s_var": u2s_var,
         "u1s_var_hyd": u1s_var_hyd,
@@ -427,9 +321,7 @@ def run_cornell_pipeline(
         "beta_2s": beta_2s_opt,
         "beta_1s_hyd": beta_1s_hyd_opt,
         "beta_2s_hyd": beta_2s_hyd_opt,
-        "errors_1s": [abs(e - e1s_fd) for e in energies_1s[:-1]],
-        "errors_2s": [abs(e - e2s_fd) for e in energies_2s[:-1]],
-        "methods": methods_all[:-1],
+        "methods": methods_all,
         "energies_1s": energies_1s,
         "energies_2s": energies_2s,
         "masses_1s": masses_1s,
@@ -439,12 +331,15 @@ def run_cornell_pipeline(
         "mass_pct_errors_1s": mass_pct_errors_1s,
         "mass_pct_errors_2s": mass_pct_errors_2s,
         "methods_all": methods_all,
-        "evals_fd": evals_fd,
-        "u_fd": u_fd,
-        "evals_fd_1": evals_fd_1,
-        "u_fd_1": u_fd_1,
-        "evals_fd_2": evals_fd_2,
-        "u_fd_2": u_fd_2,
+        "evals_gem": evals_gem,
+        "u_gem": u_gem,
+        "evals_gem_1": evals_gem_1,
+        "u_gem_1": u_gem_1,
+        "evals_gem_2": evals_gem_2,
+        "u_gem_2": u_gem_2,
+        "evecs_gem": evecs_gem,
+        "nu_gem": nu_gem,
+        "n_basis_gem": n_basis_gem,
         "calc_hf_shift": calc_hf_shift,
         "calc_so_shift": calc_so_shift,
     }
