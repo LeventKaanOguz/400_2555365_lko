@@ -8,15 +8,15 @@ from scripts.pipeline import run_cornell_pipeline
 
 # --- System Parameters ---
 HBAR = 1.0
-M_Q = 4.730
+M_Q = 1.50  # Charm quark mass in GeV (Standard phenomenological value)
 MU = M_Q / 2.0
-ALPHA_S = 0.3807  # Strong coupling constant for the Coulomb-like interaction
+ALPHA_S = 0.40  # Strong coupling constant for the Charmonium interaction
 B = 0.183  # Linear confinement string tension
-C = 0.070  # Constant potential shift
+C = -0.250  # Constant potential shift (Adjusted for Charmonium)
 SIGMA_SMEAR = 1.5  # Smearing parameter for spin-spin interaction (GeV)
-EXP_MASS_1S = 9.3987  # eta_b (1S) mass in GeV
-EXP_MASS_1S_TRIPLET = 9.4603  # Upsilon (1S) mass in GeV
-EXP_MASS_2S = 10.0234  # Upsilon (2S) mass in GeV
+EXP_MASS_1S = 2.9839  # eta_c (1S) mass in GeV
+EXP_MASS_1S_TRIPLET = 3.0969  # J/psi (1S) mass in GeV
+EXP_MASS_2S = 3.6861  # psi(2S) mass in GeV
 
 
 def run_comparisons():
@@ -30,7 +30,7 @@ def run_comparisons():
         exp_mass_1s_triplet=EXP_MASS_1S_TRIPLET,
         exp_mass_2s=EXP_MASS_2S,
         hbar=HBAR,
-        system_name="Bottomonium",
+        system_name="Charmonium",
     )
 
     evals_gem = results["evals_gem"]
@@ -55,64 +55,54 @@ def run_comparisons():
 
     table_data = [
         (
-            "(1^1S) η_b",
+            "(1^1S) η_c",
             get_mass(evals_gem, u_gem, 0, 0, 0),
-            "0.7828",
-            "9.5535",
-            "9.3987±0.002",
-            "9.5615",
-            "9.398",
-            "9.398",
-            "9.5079",
-            "9.452",
-            "-",
+            "0.4860",
+            "3.0330",
+            "2.9839±0.0004",
+            "2.9644",
+            "2.981",
+            "3.068",
+            "2.980",
         ),
         (
-            "(1^3S) Υ_b",
+            "(1^3S) J/ψ",
             get_mass(evals_gem, u_gem, 0, 1, 0),
-            "0.7571",
-            "9.5722",
-            "9.4603±0.00026",
-            "9.6478",
-            "9.478",
-            "9.460",
-            "9.5229",
-            "9.480",
+            "0.4207",
+            "3.117",
+            "3.0969±0.000006",
+            "3.0964",
+            "3.096",
             "-",
+            "3.096",
         ),
         (
-            "(1^1P) h_b",
+            "(1^1P) h_c",
             get_mass(evals_gem_1, u_gem_1, 0, 0, 1),
-            "0.5129",
-            "9.9373",
-            "9.8993",
-            "9.9324",
-            "9.900",
-            "9.894",
-            "9.9279",
-            "-",
+            "0.3296",
+            "3.5260",
+            "3.52538±0.00011",
+            "3.4161",
+            "3.525",
+            "3.534",
             "-",
         ),
         (
-            "(1^3P_0) χ_b0",
+            "(1^3P_0) χ_c0",
             get_mass(evals_gem_1, u_gem_1, 0, 1, 1, j=0),
-            "0.5096",
-            "9.9391",
-            "9.8594",
-            "9.9389",
-            "9.912",
-            "9.858",
-            "9.9232",
+            "0.3246",
+            "3.5319",
+            "-",
+            "3.4358",
+            "3.555",
             "-",
             "-",
         ),
         (
-            "(1^3P_1) χ_b1",
+            "(1^3P_1) χ_c1",
             get_mass(evals_gem_1, u_gem_1, 0, 1, 1, j=1),
             "-",
             "-",
-            "9.8928",
-            "-",
             "-",
             "-",
             "-",
@@ -120,103 +110,87 @@ def run_comparisons():
             "-",
         ),
         (
-            "(1^3P_2) χ_b2",
+            "(1^3P_2) χ_c2",
             get_mass(evals_gem_1, u_gem_1, 0, 1, 1, j=2),
             "-",
             "-",
-            "9.9122",
-            "-",
-            "-",
+            "3.55617±0.00007",
             "-",
             "-",
             "-",
             "-",
         ),
         (
-            "(1^1D) η_b2",
+            "(1^1D) η_c2",
             get_mass(evals_gem_2, u_gem_2, 0, 0, 2),
-            "0.4425",
-            "10.1398",
+            "0.2919",
+            "3.8040",
             "-",
+            "3.6751",
+            "3.807",
+            "3.802",
             "-",
-            "10.163",
-            "-",
-            "10.1355",
+        ),
+        (
+            "(1^3D) ψ",
+            get_mass(evals_gem_2, u_gem_2, 0, 1, 2, j=1),
+            "0.2915",
+            "3.8044",
+            "3.77313±0.0004",
+            "3.6881",
+            "3.783",
             "-",
             "-",
         ),
         (
-            "(1^3D) Υ",
-            get_mass(evals_gem_2, u_gem_2, 0, 1, 2, j=2),
-            "0.4422",
-            "10.1399",
-            "-",
-            "-",
-            "10.161",
-            "-",
-            "10.1548",
-            "-",
-            "-",
-        ),
-        (
-            "(2^1S) η_b",
+            "(2^1S) η_c",
             get_mass(evals_gem, u_gem, 1, 0, 0),
-            "0.62615",
-            "9.9980",
-            "-",
-            "-",
-            "9.990",
-            "10.017",
-            "10.0041",
-            "10.030",
-            "-",
+            "0.40908",
+            "3.6236",
+            "3.6375±0.0011",
+            "3.5078",
+            "3.635",
+            "3.638",
+            "3.624",
         ),
         (
-            "(2^3S) Υ",
+            "(2^3S) ψ(2S)",
             get_mass(evals_gem, u_gem, 1, 1, 0),
-            "0.6215",
-            "10.0052",
-            "10.0233±0.0003",
-            "10.0167",
-            "10.023",
-            "10.356",
-            "10.0101",
-            "10.055",
+            "0.3940",
+            "3.6678",
+            "3.68610±0.00006",
+            "3.605",
+            "3.685",
             "-",
+            "3.727",
         ),
         (
-            "(2^1P) h_b",
+            "(2^1P) h_c",
             get_mass(evals_gem_1, u_gem_1, 1, 0, 1),
-            "0.3924",
-            "10.2210",
-            "10.2598",
-            "10.2161",
-            "10.260",
-            "10.259",
+            "0.2610",
+            "3.9335",
             "-",
-            "-",
+            "3.8774",
+            "3.926",
+            "3.936",
             "-",
         ),
         (
-            "(2^3P_0) χ_b0",
+            "(2^3P_0) χ_c0",
             get_mass(evals_gem_1, u_gem_1, 1, 1, 1, j=0),
-            "0.3909",
-            "10.2288",
-            "10.2325",
+            "0.2578",
+            "3.9413",
             "-",
-            "10.2232",
-            "10.255",
-            "-",
+            "3.9011",
+            "3.949",
             "-",
             "-",
         ),
         (
-            "(2^3P_1) χ_b1",
+            "(2^3P_1) χ_c1",
             get_mass(evals_gem_1, u_gem_1, 1, 1, 1, j=1),
             "-",
             "-",
-            "10.2555",
-            "-",
             "-",
             "-",
             "-",
@@ -224,12 +198,10 @@ def run_comparisons():
             "-",
         ),
         (
-            "(2^3P_2) χ_b2",
+            "(2^3P_2) χ_c2",
             get_mass(evals_gem_1, u_gem_1, 1, 1, 1, j=2),
             "-",
             "-",
-            "10.2687",
-            "-",
             "-",
             "-",
             "-",
@@ -237,28 +209,24 @@ def run_comparisons():
             "-",
         ),
         (
-            "(2^2D) η_b2",
+            "(2^1D) η_c2",
             get_mass(evals_gem_2, u_gem_2, 1, 0, 2),
-            "0.301959",
-            "10.3780",
+            "0.2024",
+            "4.1573",
             "-",
             "-",
-            "-",
-            "10.450",
-            "-",
-            "-",
+            "4.196",
+            "4.150",
             "-",
         ),
         (
-            "(2^3D) Υ",
-            get_mass(evals_gem_2, u_gem_2, 1, 1, 2, j=2),
-            "0.30170",
-            "10.3783",
+            "(2^3D) ψ",
+            get_mass(evals_gem_2, u_gem_2, 1, 1, 2, j=1),
+            "0.2020",
+            "4.1582",
             "-",
             "-",
-            "10.443",
-            "10.442",
-            "-",
+            "4.150",
             "-",
             "-",
         ),
@@ -267,18 +235,18 @@ def run_comparisons():
     output_lines = []
     output_lines.append("--- Comparison with Literature (Akbar et al. 2024) ---")
     output_lines.append(
-        "Reference paper provided Experimental and Theoretical benchmarks for bottomonium."
+        "Reference paper provided Experimental and Theoretical benchmarks for charmonium."
     )
     output_lines.append(
-        f"{'State':<15} | {'Our Work (GEM)':<15} | {'Akbar Var Param':<15} | {'Akbar (2024)':<12} | {'Experimental':<18} | {'[27]':<8} | {'[33]':<8} | {'[34]':<8} | {'[35]':<8} | {'[25]':<8} | {'[36]':<4}"
+        f"{'State':<15} | {'Our Work (GEM)':<15} | {'Akbar Var Param':<15} | {'Akbar (2024)':<12} | {'Exp [27]':<18} | {'[33]':<8} | {'[34]':<8} | {'[35]':<8} | {'[36]':<8}"
     )
-    output_lines.append("-" * 147)
+    output_lines.append("-" * 125)
 
     for row in table_data:
         output_lines.append(
-            f"{row[0]:<15} | {row[1]:<15.4f} | {row[2]:<15} | {row[3]:<12} | {row[4]:<18} | {row[5]:<8} | {row[6]:<8} | {row[7]:<8} | {row[8]:<8} | {row[9]:<8} | {row[10]:<4}"
+            f"{row[0]:<15} | {row[1]:<15.4f} | {row[2]:<15} | {row[3]:<12} | {row[4]:<18} | {row[5]:<8} | {row[6]:<8} | {row[7]:<8} | {row[8]:<8}"
         )
-    output_lines.append("=" * 147 + "\n")
+    output_lines.append("=" * 125 + "\n")
 
     output_lines.append("--- Error Analysis vs Experimental Data ---")
     output_lines.append(
@@ -308,7 +276,7 @@ def run_comparisons():
     print(output_text)
 
     os.makedirs("results/tables", exist_ok=True)
-    out_path = "results/tables/cornell_3d_toy_error_analysis.txt"
+    out_path = "results/tables/charmonium_error_analysis.txt"
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(output_text)
     print(f"Error analysis table successfully saved to '{out_path}'\n")

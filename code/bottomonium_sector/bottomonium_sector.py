@@ -33,11 +33,6 @@ def run_comparisons():
         system_name="Bottomonium",
     )
 
-    print("--- Comparison with Literature (Akbar et al. 2024) ---")
-    print(
-        "Reference paper provided Experimental and Theoretical benchmarks for bottomonium."
-    )
-
     evals_gem = results["evals_gem"]
     u_gem = results["u_gem"]
     evals_gem_1 = results["evals_gem_1"]
@@ -58,10 +53,6 @@ def run_comparisons():
 
         return 2 * M_Q + bare + hf_shift + so_shift
 
-    print(
-        f"{'State':<13} | {'Our Work (GEM)':<15} | {'Akbar Var Param':<15} | {'Akbar (2024)':<12} | {'Experimental':<18} | {'[27]':<8} | {'[33]':<8} | {'[34]':<8} | {'[35]':<8} | {'[25]':<8} | {'[36]':<4}"
-    )
-    print("-" * 147)
     table_data = [
         (
             "(1^1S) η_b",
@@ -246,7 +237,7 @@ def run_comparisons():
             "-",
         ),
         (
-            "(2^2D) η_b2",
+            "(2^1D) η_b2",
             get_mass(evals_gem_2, u_gem_2, 1, 0, 2),
             "0.301959",
             "10.3780",
@@ -272,17 +263,29 @@ def run_comparisons():
             "-",
         ),
     ]
-    for row in table_data:
-        print(
-            f"{row[0]:<13} | {row[1]:<15.4f} | {row[2]:<15} | {row[3]:<12} | {row[4]:<18} | {row[5]:<8} | {row[6]:<8} | {row[7]:<8} | {row[8]:<8} | {row[9]:<8} | {row[10]:<4}"
-        )
-    print("=" * 147 + "\n")
 
-    print("--- Error Analysis vs Experimental Data ---")
-    print(
-        f"{'State':<13} | {'Calculated [GeV]':<18} | {'Experimental [GeV]':<18} | {'Abs Error [MeV]':<15} | {'% Error':<10}"
+    output_lines = []
+    output_lines.append("--- Comparison with Literature (Akbar et al. 2024) ---")
+    output_lines.append(
+        "Reference paper provided Experimental and Theoretical benchmarks for bottomonium."
     )
-    print("-" * 86)
+    output_lines.append(
+        f"{'State':<15} | {'Our Work (GEM)':<15} | {'Akbar Var Param':<15} | {'Akbar (2024)':<12} | {'Experimental':<18} | {'[27]':<8} | {'[33]':<8} | {'[34]':<8} | {'[35]':<8} | {'[25]':<8} | {'[36]':<4}"
+    )
+    output_lines.append("-" * 147)
+
+    for row in table_data:
+        output_lines.append(
+            f"{row[0]:<15} | {row[1]:<15.4f} | {row[2]:<15} | {row[3]:<12} | {row[4]:<18} | {row[5]:<8} | {row[6]:<8} | {row[7]:<8} | {row[8]:<8} | {row[9]:<8} | {row[10]:<4}"
+        )
+    output_lines.append("=" * 147 + "\n")
+
+    output_lines.append("--- Error Analysis vs Experimental Data ---")
+    output_lines.append(
+        f"{'State':<15} | {'Calculated [GeV]':<18} | {'Experimental [GeV]':<18} | {'Abs Error [MeV]':<15} | {'% Error':<10}"
+    )
+    output_lines.append("-" * 88)
+
     for row in table_data:
         state = row[0]
         calc_mass = row[1]
@@ -292,14 +295,23 @@ def run_comparisons():
             exp_mass = float(exp_str.split("±")[0])
             abs_err = (calc_mass - exp_mass) * 1000.0  # Convert to MeV
             pct_err = abs(calc_mass - exp_mass) / exp_mass * 100.0
-            print(
-                f"{state:<13} | {calc_mass:<18.4f} | {exp_mass:<18.4f} | {abs_err:<15.1f} | {pct_err:<10.3f}"
+            output_lines.append(
+                f"{state:<15} | {calc_mass:<18.4f} | {exp_mass:<18.4f} | {abs_err:<15.1f} | {pct_err:<10.3f}"
             )
         else:
-            print(
-                f"{state:<13} | {calc_mass:<18.4f} | {'-':<18} | {'-':<15} | {'-':<10}"
+            output_lines.append(
+                f"{state:<15} | {calc_mass:<18.4f} | {'-':<18} | {'-':<15} | {'-':<10}"
             )
-    print("=" * 86 + "\n")
+    output_lines.append("=" * 88 + "\n")
+
+    output_text = "\n".join(output_lines)
+    print(output_text)
+
+    os.makedirs("results/tables", exist_ok=True)
+    out_path = "results/tables/bottomonium_error_analysis.txt"
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(output_text)
+    print(f"Error analysis table successfully saved to '{out_path}'\n")
 
     results["comparison_table_data"] = table_data
     return results

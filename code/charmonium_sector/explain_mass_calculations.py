@@ -27,7 +27,7 @@ the constituent quark mass and three distinct energy contributions:
     M = 2 * m_q  +  E_bare(N, L)  +  ΔE_HF(L, S)  +  ΔE_SO(L, S, J)
 
 --- 1. Constituent Mass (2 * m_q) ---
-The sum of the rest masses of the bottom quark (m_b) and anti-bottom quark (m_b-bar).
+The sum of the rest masses of the charm quark (m_c) and anti-charm quark (m_c-bar).
 
 --- 2. Bare Energy: E_bare(N, L) ---
 The energy eigenvalue from solving the radial Schrödinger equation. This is done
@@ -76,10 +76,10 @@ def explain_states(results=None):
         mass_dict = {row[0]: row[1] for row in results["comparison_table_data"]}
 
     states = [
-        {"name": "(1^1S) η_b", "n": 1, "L": 0, "S": 0, "J": 0, "bare": "evals_gem[0]"},
-        {"name": "(1^3S) Υ_b", "n": 1, "L": 0, "S": 1, "J": 1, "bare": "evals_gem[0]"},
+        {"name": "(1^1S) η_c", "n": 1, "L": 0, "S": 0, "J": 0, "bare": "evals_gem[0]"},
+        {"name": "(1^3S) J/ψ", "n": 1, "L": 0, "S": 1, "J": 1, "bare": "evals_gem[0]"},
         {
-            "name": "(1^1P) h_b",
+            "name": "(1^1P) h_c",
             "n": 1,
             "L": 1,
             "S": 0,
@@ -87,7 +87,7 @@ def explain_states(results=None):
             "bare": "evals_gem_1[0]",
         },
         {
-            "name": "(1^3P_0) χ_b0",
+            "name": "(1^3P_0) χ_c0",
             "n": 1,
             "L": 1,
             "S": 1,
@@ -95,7 +95,7 @@ def explain_states(results=None):
             "bare": "evals_gem_1[0]",
         },
         {
-            "name": "(1^3P_1) χ_b1",
+            "name": "(1^3P_1) χ_c1",
             "n": 1,
             "L": 1,
             "S": 1,
@@ -103,7 +103,7 @@ def explain_states(results=None):
             "bare": "evals_gem_1[0]",
         },
         {
-            "name": "(1^3P_2) χ_b2",
+            "name": "(1^3P_2) χ_c2",
             "n": 1,
             "L": 1,
             "S": 1,
@@ -111,18 +111,25 @@ def explain_states(results=None):
             "bare": "evals_gem_1[0]",
         },
         {
-            "name": "(1^1D) η_b2",
+            "name": "(1^1D) η_c2",
             "n": 1,
             "L": 2,
             "S": 0,
             "J": 2,
             "bare": "evals_gem_2[0]",
         },
-        {"name": "(1^3D) Υ", "n": 1, "L": 2, "S": 1, "J": 2, "bare": "evals_gem_2[0]"},
-        {"name": "(2^1S) η_b", "n": 2, "L": 0, "S": 0, "J": 0, "bare": "evals_gem[1]"},
-        {"name": "(2^3S) Υ", "n": 2, "L": 0, "S": 1, "J": 1, "bare": "evals_gem[1]"},
+        {"name": "(1^3D) ψ", "n": 1, "L": 2, "S": 1, "J": 1, "bare": "evals_gem_2[0]"},
+        {"name": "(2^1S) η_c", "n": 2, "L": 0, "S": 0, "J": 0, "bare": "evals_gem[1]"},
         {
-            "name": "(2^1P) h_b",
+            "name": "(2^3S) ψ(2S)",
+            "n": 2,
+            "L": 0,
+            "S": 1,
+            "J": 1,
+            "bare": "evals_gem[1]",
+        },
+        {
+            "name": "(2^1P) h_c",
             "n": 2,
             "L": 1,
             "S": 0,
@@ -130,7 +137,7 @@ def explain_states(results=None):
             "bare": "evals_gem_1[1]",
         },
         {
-            "name": "(2^3P_0) χ_b0",
+            "name": "(2^3P_0) χ_c0",
             "n": 2,
             "L": 1,
             "S": 1,
@@ -138,7 +145,7 @@ def explain_states(results=None):
             "bare": "evals_gem_1[1]",
         },
         {
-            "name": "(2^3P_1) χ_b1",
+            "name": "(2^3P_1) χ_c1",
             "n": 2,
             "L": 1,
             "S": 1,
@@ -146,7 +153,7 @@ def explain_states(results=None):
             "bare": "evals_gem_1[1]",
         },
         {
-            "name": "(2^3P_2) χ_b2",
+            "name": "(2^3P_2) χ_c2",
             "n": 2,
             "L": 1,
             "S": 1,
@@ -154,14 +161,14 @@ def explain_states(results=None):
             "bare": "evals_gem_1[1]",
         },
         {
-            "name": "(2^1D) η_b2",
+            "name": "(2^1D) η_c2",
             "n": 2,
             "L": 2,
             "S": 0,
             "J": 2,
             "bare": "evals_gem_2[1]",
         },
-        {"name": "(2^3D) Υ", "n": 2, "L": 2, "S": 1, "J": 2, "bare": "evals_gem_2[1]"},
+        {"name": "(2^3D) ψ", "n": 2, "L": 2, "S": 1, "J": 1, "bare": "evals_gem_2[1]"},
     ]
 
     for state in states:
@@ -209,7 +216,7 @@ def explain_states(results=None):
             )
 
         # 4. Final Formula
-        components = ["2*m_q", bare]
+        components = ["2*m_c", bare]
         if L == 0:
             components.append("ΔE_HF")
         if L > 0 and S > 0:
@@ -224,11 +231,11 @@ def explain_findings(results):
     if not results or "comparison_table_data" not in results:
         return
 
-    print_header("FINAL NUMERICAL FINDINGS (BOTTOMONIUM SECTOR)")
+    print_header("FINAL NUMERICAL FINDINGS (CHARMONIUM SECTOR)")
     print(
         "The following table summarizes the calculated masses against experimental data"
     )
-    print("as outputted by the bottomonium sector pipeline:\n")
+    print("as outputted by the charmonium sector pipeline:\n")
 
     print(
         f"{'State':<15} | {'Calculated [GeV]':<18} | {'Experimental [GeV]':<18} | {'Error [MeV]'}"
@@ -251,7 +258,7 @@ def explain_findings(results):
 def explain_code_implementation():
     print_header("HOW THIS IS IMPLEMENTED IN THE PIPELINE (get_mass)")
     print("""
-In `bottomonium_sector.py`, this entire logic is compactly handled by the `get_mass` function:
+In `charmonium_sector.py`, this entire logic is compactly handled by the `get_mass` function:
 
     def get_mass(evals, u_arr, state_idx, spin, l, j=None):
         bare = evals[state_idx]
@@ -274,21 +281,20 @@ In `bottomonium_sector.py`, this entire logic is compactly handled by the `get_m
 
 def main():
     try:
-        # Suppress the standard output while gathering data
-        print("Gathering live data from bottomonium_sector.py... (Please wait)\n")
+        print("Gathering live data from charmonium_sector.py... (Please wait)\n")
         sys.path.append(
             os.path.abspath(
-                os.path.join(os.path.dirname(__file__), "..", "bottomonium_sector")
+                os.path.join(os.path.dirname(__file__), "..", "charmonium_sector")
             )
         )
         try:
-            from bottomonium_sector import run_comparisons
+            from charmonium_sector import run_comparisons
 
             with contextlib.redirect_stdout(io.StringIO()):
                 results = run_comparisons()
         except ImportError:
             results = None
-            print("Note: Could not import bottomonium_sector.py to fetch live results.")
+            print("Note: Could not import charmonium_sector.py to fetch live results.")
 
         explain_theory()
         explain_states(results)
