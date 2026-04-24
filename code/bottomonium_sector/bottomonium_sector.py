@@ -10,9 +10,9 @@ from scripts.pipeline import run_cornell_pipeline
 HBAR = 1.0
 M_Q = 4.730
 MU = M_Q / 2.0
-ALPHA_S = 0.3807  # Strong coupling constant for the Coulomb-like interaction
-B = 0.183  # Linear confinement string tension
-C = 0.070  # Constant potential shift
+ALPHA_S = 0.3496  # Strong coupling constant for the Coulomb-like interaction
+B = 0.1930  # Linear confinement string tension
+C = 0.0305  # Constant potential shift
 SIGMA_SMEAR = 1.5  # Smearing parameter for spin-spin interaction (GeV)
 EXP_MASS_1S = 9.3987  # eta_b (1S) mass in GeV
 EXP_MASS_1S_TRIPLET = 9.4603  # Upsilon (1S) mass in GeV
@@ -41,6 +41,7 @@ def run_comparisons():
     u_gem_2 = results["u_gem_2"]
     calc_hf_shift = results["calc_hf_shift"]
     calc_so_shift = results["calc_so_shift"]
+    calc_tensor_shift = results["calc_tensor_shift"]
 
     def get_mass(evals, u_arr, state_idx, spin, l, j=None):
         bare = evals[state_idx]
@@ -48,10 +49,12 @@ def run_comparisons():
         hf_shift = calc_hf_shift(u_arr[:, state_idx], spin=spin) if l == 0 else 0.0
 
         so_shift = 0.0
+        tensor_shift = 0.0
         if l > 0 and spin > 0 and j is not None:
             so_shift = calc_so_shift(u_arr[:, state_idx], l=l, s=spin, j=j)
+            tensor_shift = calc_tensor_shift(u_arr[:, state_idx], l=l, s=spin, j=j)
 
-        return 2 * M_Q + bare + hf_shift + so_shift
+        return 2 * M_Q + bare + hf_shift + so_shift + tensor_shift
 
     table_data = [
         (

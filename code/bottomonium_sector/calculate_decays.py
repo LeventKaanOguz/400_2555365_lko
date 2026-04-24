@@ -8,24 +8,39 @@ from bottomonium_sector import run_comparisons, ALPHA_S
 ALPHA_EM = 1.0 / 137.036
 
 
-def calc_leptonic_width(u_array, r_array, m_v, e_q=-1 / 3):
+def get_wfo_exact(c_i, nu_array, r_array):
+    """
+    Computes the exact Wavefunction at the Origin (WFO) u'(0)
+    using GEM basis coefficients and exact analytical derivative.
+    """
+    u_prime_0 = 0.0
+    for c, nu in zip(c_i, nu_array):
+        u_unnorm = r_array * np.exp(-nu * r_array**2)
+        norm = np.sqrt(simpson(y=u_unnorm**2, x=r_array))
+        # Unnormalized u'(0) for r*exp(-nu r^2) is exactly 1.0.
+        # So the normalized derivative at origin is 1.0 / norm.
+        u_prime_0 += c / norm
+    return u_prime_0
+
+
+def calc_leptonic_width(c_i, nu_array, r_array, m_v, e_q=-1 / 3):
     """
     Calculates the leptonic decay width V -> e+ e- using the Van Royen-Weisskopf formula
     for Vector (S=1) states.
     """
-    du_dr = np.gradient(u_array, r_array)
-    psi_0_sq = (du_dr[0] ** 2) / (4.0 * np.pi)
+    u_prime_0 = get_wfo_exact(c_i, nu_array, r_array)
+    psi_0_sq = (u_prime_0**2) / (4.0 * np.pi)
     gamma_gev = (16.0 * np.pi * ALPHA_EM**2 * (e_q**2) * psi_0_sq) / (m_v**2)
     return gamma_gev * 1e6  # Convert GeV to keV
 
 
-def calc_two_photon_width(u_array, r_array, m_p, e_q=-1 / 3):
+def calc_two_photon_width(c_i, nu_array, r_array, m_p, e_q=-1 / 3):
     """
     Calculates the two-photon decay width P -> gamma gamma for Pseudoscalar (S=0) states.
     Note the dependence on e_q^4 and the factor of 12 instead of 16.
     """
-    du_dr = np.gradient(u_array, r_array)
-    psi_0_sq = (du_dr[0] ** 2) / (4.0 * np.pi)
+    u_prime_0 = get_wfo_exact(c_i, nu_array, r_array)
+    psi_0_sq = (u_prime_0**2) / (4.0 * np.pi)
     gamma_gev = (12.0 * np.pi * ALPHA_EM**2 * (e_q**4) * psi_0_sq) / (m_p**2)
     return gamma_gev * 1e6  # Convert GeV to keV
 
@@ -65,6 +80,10 @@ def calculate_bottomonium_decays():
     u2s = results["u2s_gem"]
     u1p = results["u_gem_1"][:, 0]
 
+    c_1s = results["evecs_gem"][:, 0]
+    c_2s = results["evecs_gem"][:, 1]
+    nu_gem = results["nu_gem"]
+
     # 2. Extract calculated masses
     mass_dict = {row[0]: row[1] for row in results["comparison_table_data"]}
 
@@ -88,8 +107,8 @@ def calculate_bottomonium_decays():
     qcd_corr_gg = 1.0 - (3.4 / np.pi) * ALPHA_S  # Approx QCD correction for 2-photon
 
     if m_ups_1s and m_ups_2s:
-        w_ups1s = calc_leptonic_width(u1s, r, m_ups_1s)
-        w_ups2s = calc_leptonic_width(u2s, r, m_ups_2s)
+        w_ups1s = calc_leptonic_width(c_1s, nu_gem, r, m_ups_1s)
+        w_ups2s = calc_leptonic_width(c_2s, nu_gem, r, m_ups_2s)
         print(
             f"[*] Υ(1S) -> e+ e-  | Raw: {w_ups1s:>6.3f} keV | QCD Corr: {w_ups1s * qcd_corr_lep:>5.3f} keV"
         )
@@ -102,7 +121,7 @@ def calculate_bottomonium_decays():
 
     if m_eta_b_1s:
         w_eta_1s = calc_two_photon_width(
-            u1s, r, m_eta_b_1s
+            c_1s, nu_gem, r, m_eta_b_1s
         )  # Uses same spatial u(r) as Upsilon
         print(
             f"[*] η_b(1S) -> γγ   | Raw: {w_eta_1s:>6.3f} keV | QCD Corr: {w_eta_1s * qcd_corr_gg:>5.3f} keV"

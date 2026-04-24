@@ -2,6 +2,9 @@ import numpy as np
 from scipy.optimize import minimize
 from scripts.variational import normalize_ansatz, compute_expectation_value, solve_gem
 
+import contextlib
+import io
+
 
 def v_cornell_3d(r_val, alpha_s, b, c):
     return -(4.0 / 3.0) * alpha_s / r_val + b * r_val + c
@@ -100,6 +103,32 @@ def run_cornell_pipeline(
 
         shift = simpson(y=(u_array**2) * v_ls, x=r)
         return shift * ls_dot
+
+    def calc_tensor_shift(u_array, l, s, j):
+        """
+        Calculates the Tensor interaction shift for L > 0 states.
+        """
+        if l == 0 or s == 0:
+            return 0.0
+
+        from scipy.integrate import simpson
+
+        if s == 1:
+            if j == l - 1:
+                s12 = -(l + 1.0) / (2.0 * l - 1.0)
+            elif j == l:
+                s12 = 1.0
+            elif j == l + 1:
+                s12 = -l / (2.0 * l + 3.0)
+            else:
+                s12 = 0.0
+        else:
+            s12 = 0.0
+
+        v_tensor = (4.0 * alpha_s) / (3.0 * m_q**2 * r**3)
+
+        shift = simpson(y=(u_array**2) * v_tensor, x=r)
+        return shift * s12
 
     # ==========================================
     # 1. VARIATIONAL METHOD (Radial Ansatz)
@@ -200,15 +229,45 @@ def run_cornell_pipeline(
     # 2. GAUSSIAN EXPANSION METHOD (GEM)
     # ==========================================
     n_basis_gem = 25
-    r_min_gem = 0.03
-    r_max_gem = 15.0
     l_gem = 0
 
     print("--- Gaussian Expansion Method (GEM) Parameters ---")
-    print(f"Number of Basis Functions (n_basis) : {n_basis_gem}")
-    print(f"Minimum Radial Limit (r_min)        : {r_min_gem}")
-    print(f"Maximum Radial Limit (r_max)        : {r_max_gem}")
-    print(f"Orbital Angular Momentum (l)        : {l_gem}\n")
+    print("Optimizing GEM basis limits (r_min, r_max)...")
+
+    def gem_objective(params):
+        rmin, rmax = params
+        with contextlib.redirect_stdout(io.StringIO()):
+            try:
+                evals, _, _, _ = solve_gem(
+                    r,
+                    v_total,
+                    hbar,
+                    mu,
+                    n_basis=n_basis_gem,
+                    r_min=rmin,
+                    r_max=rmax,
+                    l=l_gem,
+                )
+                return evals[0]
+            except Exception:
+                return np.inf
+
+    # Prevent r_min from falling below grid resolution, which causes variational collapse
+    safe_r_min = max(0.05, 10.0 * dr)
+
+    gem_opt = minimize(
+        gem_objective,
+        x0=[max(0.1, safe_r_min), 15.0],
+        bounds=[(safe_r_min, 1.0), (5.0, 30.0)],
+        method="L-BFGS-B",
+        options={"eps": 0.01, "maxiter": 20},
+    )
+    r_min_gem, r_max_gem = gem_opt.x
+
+    print(f"Optimized Minimum Radial Limit (r_min) : {r_min_gem:.4f}")
+    print(f"Optimized Maximum Radial Limit (r_max) : {r_max_gem:.4f}")
+    print(f"Number of Basis Functions (n_basis)    : {n_basis_gem}")
+    print(f"Orbital Angular Momentum (l)           : {l_gem}\n")
 
     evals_gem, u_gem, evecs_gem, nu_gem = solve_gem(
         r,
@@ -342,4 +401,5 @@ def run_cornell_pipeline(
         "n_basis_gem": n_basis_gem,
         "calc_hf_shift": calc_hf_shift,
         "calc_so_shift": calc_so_shift,
+        "calc_tensor_shift": calc_tensor_shift,
     }
