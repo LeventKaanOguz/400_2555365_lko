@@ -76,6 +76,48 @@ where $H$ is the Hamiltonian matrix and $B$ is the Overlap matrix. GEM allows us
 *   **Potential Shift ($c$)**: -0.25 GeV
 *   **Smearing Parameter ($\sigma$)**: 1.2 GeV
 
+### Optimized Parameters
+
+**Variational Method (Trial Wavefunctions)**
+
+| Ansatz | 1S Parameter | 2S Parameter |
+|---|---|---|
+| Harmonic | $\beta$ = 0.643334 | $\beta$ = 0.441448 |
+| Hydrogenic | $\beta$ = 0.831391 | $\beta$ = 1.646491 |
+
+**Gaussian Expansion Method (GEM)**
+
+Number of Basis Functions ($n_{basis}$): 25
+
+| Index | $\nu$ (width) | $c_{{1S}}$ (Ground) | $c_{{2S}}$ (1st Excited) |
+|---|---|---|---|
+| 0 | 1.111111e+03 | -6.367777e-03 | -5.185132e-03 |
+| 1 | 6.619776e+02 | 1.783218e-02 | 1.451550e-02 |
+| 2 | 3.943930e+02 | -3.157754e-02 | -2.569154e-02 |
+| 3 | 2.349714e+02 | 4.171555e-02 | 3.390726e-02 |
+| 4 | 1.399912e+02 | -4.961725e-02 | -4.026668e-02 |
+| 5 | 8.340396e+01 | 5.281075e-02 | 4.272834e-02 |
+| 6 | 4.969040e+01 | -5.592136e-02 | -4.502342e-02 |
+| 7 | 2.960454e+01 | 5.494083e-02 | 4.379648e-02 |
+| 8 | 1.763779e+01 | -5.691657e-02 | -4.468957e-02 |
+| 9 | 1.050824e+01 | 5.274259e-02 | 3.997509e-02 |
+| 10 | 6.260598e+00 | -5.705943e-02 | -4.137791e-02 |
+| 11 | 3.729938e+00 | 4.617057e-02 | 2.833463e-02 |
+| 12 | 2.222222e+00 | -6.096000e-02 | -3.449540e-02 |
+| 13 | 1.323955e+00 | 2.693862e-02 | -8.076837e-03 |
+| 14 | 7.887859e-01 | -8.439880e-02 | -2.749422e-02 |
+| 15 | 4.699428e-01 | -4.612013e-02 | -1.561402e-01 |
+| 16 | 2.799825e-01 | -2.127433e-01 | -1.446480e-01 |
+| 17 | 1.668079e-01 | -3.503851e-01 | -1.183881e+00 |
+| 18 | 9.938080e-02 | -3.625750e-01 | 2.446973e-01 |
+| 19 | 5.920908e-02 | 1.213596e-02 | 1.702276e+00 |
+| 20 | 3.527558e-02 | -1.832685e-02 | -3.121558e-01 |
+| 21 | 2.101648e-02 | 1.129192e-02 | 1.460741e-01 |
+| 22 | 1.252120e-02 | -5.704950e-03 | -6.520842e-02 |
+| 23 | 7.459877e-03 | 2.140052e-03 | 2.290497e-02 |
+| 24 | 4.444444e-03 | -4.384773e-04 | -4.524101e-03 |
+
+
 ### Error Analysis vs Experimental Data (Charmonium)
 The following table presents the dynamically calculated masses for the charmonium states and contrasts them against the experimental literature values.
 
@@ -132,6 +174,48 @@ Below is the extended comparison table, which includes results from different th
 *   **String Tension ($b$)**: 0.183 GeV²
 *   **Potential Shift ($c$)**: 0.07 GeV
 *   **Smearing Parameter ($\sigma$)**: 1.5 GeV
+
+### Optimized Parameters
+
+**Variational Method (Trial Wavefunctions)**
+
+| Ansatz | 1S Parameter | 2S Parameter |
+|---|---|---|
+| Harmonic | $\beta$ = 1.197028 | $\beta$ = 0.722816 |
+| Hydrogenic | $\beta$ = 1.585972 | $\beta$ = 2.713224 |
+
+**Gaussian Expansion Method (GEM)**
+
+Number of Basis Functions ($n_{basis}$): 25
+
+| Index | $\nu$ (width) | $c_{{1S}}$ (Ground) | $c_{{2S}}$ (1st Excited) |
+|---|---|---|---|
+| 0 | 1.111111e+03 | -2.191460e-02 | -1.412095e-02 |
+| 1 | 6.619776e+02 | 6.108617e-02 | 3.936154e-02 |
+| 2 | 3.943930e+02 | -1.083587e-01 | -6.982646e-02 |
+| 3 | 2.349714e+02 | 1.426675e-01 | 9.193481e-02 |
+| 4 | 1.399912e+02 | -1.703763e-01 | -1.097981e-01 |
+| 5 | 8.340396e+01 | 1.799889e-01 | 1.159659e-01 |
+| 6 | 4.969040e+01 | -1.927901e-01 | -1.242109e-01 |
+| 7 | 2.960454e+01 | 1.850730e-01 | 1.190343e-01 |
+| 8 | 1.763779e+01 | -1.990056e-01 | -1.279992e-01 |
+| 9 | 1.050824e+01 | 1.703077e-01 | 1.082792e-01 |
+| 10 | 6.260598e+00 | -2.091328e-01 | -1.340902e-01 |
+| 11 | 3.729938e+00 | 1.253132e-01 | 7.191453e-02 |
+| 12 | 2.222222e+00 | -2.527906e-01 | -1.672850e-01 |
+| 13 | 1.323955e+00 | 3.658824e-03 | -5.921148e-02 |
+| 14 | 7.887859e-01 | -3.800152e-01 | -3.381451e-01 |
+| 15 | 4.699428e-01 | -1.914123e-01 | -5.521129e-01 |
+| 16 | 2.799825e-01 | -3.016251e-01 | -3.705573e-02 |
+| 17 | 1.668079e-01 | 6.949530e-02 | 1.486358e+00 |
+| 18 | 9.938080e-02 | -6.258724e-02 | -5.825428e-02 |
+| 19 | 5.920908e-02 | 4.413610e-02 | 6.641477e-02 |
+| 20 | 3.527558e-02 | -2.862658e-02 | -4.282650e-02 |
+| 21 | 2.101648e-02 | 1.670538e-02 | 2.438418e-02 |
+| 22 | 1.252120e-02 | -8.280262e-03 | -1.182191e-02 |
+| 23 | 7.459877e-03 | 3.078437e-03 | 4.321471e-03 |
+| 24 | 4.444444e-03 | -6.280795e-04 | -8.713568e-04 |
+
 
 ### Error Analysis vs Experimental Data (Bottomonium)
 The heavier bottom quark generally allows for a more non-relativistic treatment, leading to smaller relative errors in the predicted mass spectra.

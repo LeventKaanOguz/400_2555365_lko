@@ -53,6 +53,37 @@ def format_error_analysis_table(table_data):
 
     return generate_markdown_table(headers, rows)
 
+def format_optimized_parameters(results):
+    param_str = "### Optimized Parameters\n\n"
+
+    # Variational Method
+    param_str += "**Variational Method (Trial Wavefunctions)**\n\n"
+    param_str += "| Ansatz | 1S Parameter | 2S Parameter |\n"
+    param_str += "|---|---|---|\n"
+    param_str += f"| Harmonic | $\\beta$ = {results.get('beta_1s', 'N/A'):.6f} | $\\beta$ = {results.get('beta_2s', 'N/A'):.6f} |\n"
+    param_str += f"| Hydrogenic | $\\beta$ = {results.get('beta_1s_hyd', 'N/A'):.6f} | $\\beta$ = {results.get('beta_2s_hyd', 'N/A'):.6f} |\n"
+    # Note: the run_pipeline doesn't explicitly return r_n yet but we add structure for beta
+    param_str += "\n"
+
+    # Gaussian Expansion Method
+    param_str += "**Gaussian Expansion Method (GEM)**\n\n"
+    param_str += f"Number of Basis Functions ($n_{{basis}}$): {results.get('n_basis_gem', 25)}\n\n"
+    param_str += "| Index | $\\nu$ (width) | $c_{{1S}}$ (Ground) | $c_{{2S}}$ (1st Excited) |\n"
+    param_str += "|---|---|---|---|\n"
+
+    nu_array = results.get('nu_gem', [])
+    evecs = results.get('evecs_gem', [])
+
+    if len(nu_array) > 0 and len(evecs) > 0:
+        for i in range(len(nu_array)):
+            c_1s = evecs[i, 0] if evecs.shape[1] > 0 else 0
+            c_2s = evecs[i, 1] if evecs.shape[1] > 1 else 0
+            param_str += f"| {i} | {nu_array[i]:.6e} | {c_1s:.6e} | {c_2s:.6e} |\n"
+    else:
+        param_str += "| N/A | N/A | N/A | N/A |\n"
+
+    return param_str
+
 def main():
     print("Running Charmonium Calculations...")
     charm_results = charmonium_sector.run_comparisons()
@@ -138,6 +169,8 @@ where $H$ is the Hamiltonian matrix and $B$ is the Overlap matrix. GEM allows us
 *   **Potential Shift ($c$)**: {charmonium_sector.C} GeV
 *   **Smearing Parameter ($\\sigma$)**: {charmonium_sector.SIGMA_SMEAR} GeV
 
+{format_optimized_parameters(charm_results)}
+
 ### Error Analysis vs Experimental Data (Charmonium)
 The following table presents the dynamically calculated masses for the charmonium states and contrasts them against the experimental literature values.
 
@@ -158,6 +191,8 @@ Below is the extended comparison table, which includes results from different th
 *   **String Tension ($b$)**: {bottomonium_sector.B} GeV²
 *   **Potential Shift ($c$)**: {bottomonium_sector.C} GeV
 *   **Smearing Parameter ($\\sigma$)**: {bottomonium_sector.SIGMA_SMEAR} GeV
+
+{format_optimized_parameters(bottom_results)}
 
 ### Error Analysis vs Experimental Data (Bottomonium)
 The heavier bottom quark generally allows for a more non-relativistic treatment, leading to smaller relative errors in the predicted mass spectra.
