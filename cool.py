@@ -68,19 +68,23 @@ def format_optimized_parameters(results):
     # Gaussian Expansion Method
     param_str += "**Gaussian Expansion Method (GEM)**\n\n"
     param_str += f"Number of Basis Functions ($n_{{basis}}$): {results.get('n_basis_gem', 25)}\n\n"
-    param_str += "| Index | $\\nu$ (width) | $c_{{1S}}$ (Ground) | $c_{{2S}}$ (1st Excited) |\n"
-    param_str += "|---|---|---|---|\n"
 
-    nu_array = results.get('nu_gem', [])
-    evecs = results.get('evecs_gem', [])
+    def generate_gem_table(nu_arr, evecs_arr, title):
+        tbl = f"*{title}*\n\n"
+        tbl += "| Index | $\\nu$ (width) | $c_0$ (Ground) | $c_1$ (1st Excited) |\n"
+        tbl += "|---|---|---|---|\n"
+        if len(nu_arr) > 0 and len(evecs_arr) > 0:
+            for i in range(len(nu_arr)):
+                c_0 = evecs_arr[i, 0] if evecs_arr.shape[1] > 0 else 0
+                c_1 = evecs_arr[i, 1] if evecs_arr.shape[1] > 1 else 0
+                tbl += f"| {i} | {nu_arr[i]:.6e} | {c_0:.6e} | {c_1:.6e} |\n"
+        else:
+            tbl += "| N/A | N/A | N/A | N/A |\n"
+        return tbl + "\n"
 
-    if len(nu_array) > 0 and len(evecs) > 0:
-        for i in range(len(nu_array)):
-            c_1s = evecs[i, 0] if evecs.shape[1] > 0 else 0
-            c_2s = evecs[i, 1] if evecs.shape[1] > 1 else 0
-            param_str += f"| {i} | {nu_array[i]:.6e} | {c_1s:.6e} | {c_2s:.6e} |\n"
-    else:
-        param_str += "| N/A | N/A | N/A | N/A |\n"
+    param_str += generate_gem_table(results.get('nu_gem', []), results.get('evecs_gem', []), "S-wave ($L=0$)")
+    param_str += generate_gem_table(results.get('nu_gem_1', []), results.get('evecs_gem_1', []), "P-wave ($L=1$)")
+    param_str += generate_gem_table(results.get('nu_gem_2', []), results.get('evecs_gem_2', []), "D-wave ($L=2$)")
 
     return param_str
 
@@ -91,7 +95,7 @@ def main():
     print("Running Bottomonium Calculations...")
     bottom_results = bottomonium_sector.run_comparisons()
 
-    markdown_content = f"""# Comprehensive Analysis of Charmonium and Bottomonium Spectra Using the Cornell Potential
+    markdown_content = rf"""# Comprehensive Analysis of Charmonium and Bottomonium Spectra Using the Cornell Potential
 
 ## 1. Introduction and Theoretical Framework
 
@@ -120,22 +124,28 @@ Where $m_q$ is the constituent quark mass, $\\Delta E_{{HF}}$ is the Hyperfine (
 **Hyperfine Splitting (Spin-Spin Interaction)**
 The spin-spin interaction separates the spin-singlet (S=0) and spin-triplet (S=1) states. It is evaluated as:
 
-$$ \\Delta E_{{HF}} = \\frac{{32 \\pi \\alpha_s}}{{9 m_q^2}} \\langle \\delta^3(\\vec{{r}}) \\rangle (\\vec{{S}}_1 \\cdot \\vec{{S}}_2) $$
+$$ \\Delta E_{{HF}} = \\frac{{32 \\pi \\alpha_s}}{{9 m_q^2}} \\langle \\delta^3(\\\vec{{r}}) \\rangle (\\\vec{{S}}_1 \\cdot \\\vec{{S}}_2) $$
 
-Using the identity $\\vec{{S}}_1 \\cdot \\vec{{S}}_2 = \\frac{{1}}{{2}}[S(S+1) - S_1(S_1+1) - S_2(S_2+1)]$, where $S_1 = S_2 = \\frac{{1}}{{2}}$, we have:
-*   Singlet (S=0): $\\vec{{S}}_1 \\cdot \\vec{{S}}_2 = -\\frac{{3}}{{4}}$
-*   Triplet (S=1): $\\vec{{S}}_1 \\cdot \\vec{{S}}_2 = \\frac{{1}}{{4}}$
+Using the identity $\\\vec{{S}}_1 \\cdot \\\vec{{S}}_2 = \\frac{{1}}{{2}}[S(S+1) - S_1(S_1+1) - S_2(S_2+1)]$, where $S_1 = S_2 = \\frac{{1}}{{2}}$, we have:
+*   Singlet (S=0): $\\\vec{{S}}_1 \\cdot \\\vec{{S}}_2 = -\\frac{{3}}{{4}}$
+*   Triplet (S=1): $\\\vec{{S}}_1 \\cdot \\\vec{{S}}_2 = \\frac{{1}}{{4}}$
 
 Due to the delta function at the origin, the un-smeared hyperfine shift is only non-zero for S-wave ($L=0$) states.
 
 **Spin-Orbit Coupling**
 For states with $L > 0$ and $S > 0$, the spin-orbit interaction contributes to the fine structure. It involves the expectation value of derivatives of the potential:
 
-$$ \\Delta E_{{SO}} = \\frac{{1}}{{2m_q^2}} \\left( \\frac{{3}}{{r}} \\frac{{\\partial V_V}}{{\\partial r}} - \\frac{{1}}{{r}} \\frac{{\\partial V_S}}{{\\partial r}} \\right) \\langle \\vec{{L}} \\cdot \\vec{{S}} \\rangle $$
+$$ \\Delta E_{{SO}} = \\frac{{1}}{{2m_q^2}} \\left( \\frac{{3}}{{r}} \\frac{{\\partial V_V}}{{\\partial r}} - \\frac{{1}}{{r}} \\frac{{\\partial V_S}}{{\\partial r}} \\right) \\langle \\\vec{{L}} \\cdot \\\vec{{S}} \\rangle $$
 
 Here, $V_V$ represents the vector part (Coulomb term) and $V_S$ represents the scalar part (linear term). The spin-orbit term evaluates to:
 
-$$ \\vec{{L}} \\cdot \\vec{{S}} = \\frac{{1}}{{2}}[J(J+1) - L(L+1) - S(S+1)] $$
+$$ \\\vec{{L}} \\cdot \\\vec{{S}} = \\frac{{1}}{{2}}[J(J+1) - L(L+1) - S(S+1)] $$
+
+### Physical Interpretation of QCD Corrections
+The standard Cornell potential alone only resolves states depending on their radial excitation ($N$) and orbital angular momentum ($L$). However, experimental spectra show that mesons with the same $L$ but different spins ($S=0$ vs $S=1$) or total angular momentum ($J$) have distinct masses.
+To resolve this, we introduce **Relativistic QCD corrections**, specifically derived from the Breit-Fermi Hamiltonian assuming one-gluon exchange:
+1.  **Breaking Spin Degeneracy (Hyperfine):** The contact spin-spin interaction ($\\Delta E_{{HF}}$) causes the energy of triplet states (where quark spins align, $S=1$) to be pushed higher than the singlet states (spins anti-aligned, $S=0$). This perfectly describes why the $J/\\psi$ (triplet) is heavier than the $\\eta_c$ (singlet) despite both being $1S$ wave states.
+2.  **Fine Structure Splitting (Spin-Orbit):** For states with $L \\ge 1$ (like the P-wave $\\\chi_c$ states), the intrinsic spin couples with the orbital motion. The $\\\vec{{L}} \\cdot \\\vec{{S}}$ interaction systematically splits the triplet P-states based on their total angular momentum $J = 0, 1, 2$, allowing us to accurately predict the mass hierarchy of $\\\chi_{{c0}} < \\\chi_{{c1}} < \\\chi_{{c2}}$.
 
 ## 2. Methodology
 
