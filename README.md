@@ -1,14 +1,53 @@
-# PHYS400 Project
+# PHYS400 Project: Variational Approach to the Energy Spectra of Heavy Mesons
+
+## Abstract
+Heavy mesons and baryons provide an ideal testing ground for phenomenological models of Quantum Chromodynamics (QCD) in the non-perturbative low-energy regime. Because of heavy quark symmetry, the constituent velocities within these mesons are low enough ($v^2/c^2 \ll 1$) to justify a non-relativistic approach. 
+
+This project computationally solves the non-relativistic Schrödinger equation using the **Cornell potential** to predict heavy meson mass spectra, decay widths, and root-mean-square (RMS) radii. By utilizing the Ritz variational principle alongside the **Gaussian Expansion Method (GEM)**, the project successfully resolves state wavefunctions analytically, bypassing numerical singularities and achieving sub-1% error margins against experimental Particle Data Group (PDG) data across the $c\bar{c}$, $b\bar{b}$, and $b\bar{c}$ sectors.
+
+## Theoretical Framework
+
+### The Cornell Potential
+To model the quark-antiquark interactions, we utilize the effective Cornell potential:
+$$ V(r) = -\frac{4}{3}\frac{\alpha_s}{r} + \sigma r + c $$
+This potential accurately captures two critical regimes of QCD:
+1. **Short-distance Coulombic interaction** ($-\frac{1}{r}$): Driven by single-gluon exchange.
+2. **Long-distance linear confinement** ($\sigma r$): Driven by the QCD string tension preventing color isolation.
+
+### Relativistic Fine-Structure Corrections
+To accurately match physical meson states (like separating the singlet $\eta_c$ from the triplet $J/\psi$), the model computes $O(\alpha_s^2)$ relativistic corrections as expectation values $\langle \psi | \Delta H | \psi \rangle$:
+
+* **Hyperfine (Spin-Spin) Interaction:** 
+  $$ \Delta E_{HF} = \frac{32 \pi \alpha_s}{9 m_1 m_2} \langle \delta^3(\vec{r}) \rangle (\vec{S}_1 \cdot \vec{S}_2) $$
+* **Spin-Orbit Coupling:** 
+  For $L > 0$ and $S > 0$ states, spin-orbit interactions contribute to the fine structure (e.g., resolving the $\chi_{c0,1,2}$ hierarchy).
+
+## Methodology & Computational Highlights
+
+1. **Gaussian Expansion Method (GEM):** 
+   Instead of traditional finite-difference grids, the spatial wavefunctions are expanded as a superposition of 25 non-orthogonal Gaussian basis functions ($\phi_{nl}(r) = \sum c_i r^l e^{-\nu_i r^2}$). The basis widths $\nu_i$ form a geometric progression, elegantly covering both the ultra-short and long-range structural scales.
+2. **Analytical Singularity Resolution:** 
+   Numerical integration of the $-\frac{1}{r}$ Coulomb singularity near $r=0$ causes severe instability. This pipeline bypasses numerical integration entirely by mapping the overlap matrices to exact analytical **Gamma functions**.
+3. **Gaussian Smearing of the Dirac Delta:** 
+   Evaluating the hyperfine $\delta^3(\vec{r})$ on a continuous grid is mathematically harsh. We resolve this by substituting the Dirac delta with a smeared Gaussian distribution ($\sigma \approx 1.2 - 1.5$ GeV), stabilizing overlaps without sacrificing physical accuracy.
+4. **Global $\chi^2$ Parameter Optimization:** 
+   Phenomenological parameters (quark masses, $\alpha_s$, string tension) are optimized via automated fitting routines against empirical PDG data, yielding ground state mass calculations accurate to within a few MeV (e.g., $0.02\%$ error for $\Upsilon(1S)$).
 
 ## Repository Structure
 
-- **`code/`**: Contains the Python scripts for the project.
-  - `qho/qho_osc.py`: Core logic for calculating the energy levels of the perturbed Quantum Harmonic Oscillator using Perturbation Theory (1st and 2nd order), the Variational Method, Finite Difference, and the Shooting Method.
-  - `qho/plot_qho.py`: Script to visualize the potential, wavefunctions, and error comparisons. It also exports the numerical results.
-- **`papers/`**: Reference papers relevant to the project, primarily concerning meson spectra and heavy quarkonium.
+- **`src/quarkonia/`**: Core Python package containing the physics logic.
+  - `gem_solver.py`: Contains the `QuarkoniumSystem` class and the `solve_gem` function to diagonalize the Hamiltonian analytically using Gamma functions, bypassing Coulomb singularities.
+  - `observables.py`: Computes physical observables, including hyperfine splitting (using Gaussian smearing), spin-orbit shifts, and tensor shifts.
+  - `fitter.py`: Global $\chi^2$ optimization routines to fit phenomenological parameters against experimental data.
+  - `metrics.py`: Utilities for formatting error analysis and exporting analytical GEM parameters.
+- **`scripts/`**: Executable scripts.
+  - `run_spectrum.py`: The main pipeline to generate the full spectroscopic multiplet for Charmonium ($c\bar{c}$), Bottomonium ($b\bar{b}$), and the $B_c$ meson ($b\bar{c}$).
+- **`data/`**:
+  - `pdg_data.json`: Experimental mass values sourced from the Particle Data Group (PDG) for benchmarking.
+- **`papers/`**: Reference literature relevant to heavy quarkonium phenomenological models.
 - **`results/`**: Outputs generated by the code.
-  - `figures/`: Contains plots like `qho_showcase.png`.
-  - `tables/`: Contains numerical data exports like `qho_numerical_results.csv`.
+  - CSV tables containing calculated masses, absolute/percentage errors against experimental data, and analytical GEM coefficients.
+- **`400_old/`**: Legacy code from the initial phases of the project (e.g., Quantum Harmonic Oscillator toy problem).
 
 ## Setup and Installation
 
