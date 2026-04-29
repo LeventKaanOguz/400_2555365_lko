@@ -15,6 +15,7 @@ from quarkonia.metrics import (
     format_and_evaluate,
     export_gem_parameters,
 )
+from quarkonia.fitter import get_or_fit_parameters
 
 
 def generate_spectrum(
@@ -145,22 +146,53 @@ if __name__ == "__main__":
         "3D": "B_{c1,2,3}^*",
     }
 
+    results_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "results")
+    )
+
+    print("\n--- Fitting/Loading Bottomonium Parameters ---")
+    bb_alpha_s, bb_b, bb_c = get_or_fit_parameters(
+        m_1=4.730,
+        m_2=4.730,
+        pdg_data=all_pdg.get("bb", {}),
+        r=r,
+        initial_guesses=[0.350, 0.193, 0.030],
+        csv_path=os.path.join(results_dir, "bb_params.csv"),
+    )
     bb_sys = QuarkoniumSystem(
-        m_1=4.730, m_2=4.730, alpha_s=0.350, b=0.193, c=0.030, sigma_smear=1.5
+        m_1=4.730, m_2=4.730, alpha_s=bb_alpha_s, b=bb_b, c=bb_c, sigma_smear=1.5
     )
     generate_spectrum(
         bb_sys, r, all_pdg.get("bb", {}), "Bottomonium (b_bbar)", bb_names, r_max=5.0
     )
 
+    print("\n--- Fitting/Loading Charmonium Parameters ---")
+    cc_alpha_s, cc_b, cc_c = get_or_fit_parameters(
+        m_1=1.500,
+        m_2=1.500,
+        pdg_data=all_pdg.get("cc", {}),
+        r=r,
+        initial_guesses=[0.400, 0.183, -0.250],
+        csv_path=os.path.join(results_dir, "cc_params.csv"),
+    )
     cc_sys = QuarkoniumSystem(
-        m_1=1.500, m_2=1.500, alpha_s=0.400, b=0.183, c=-0.250, sigma_smear=1.2
+        m_1=1.500, m_2=1.500, alpha_s=cc_alpha_s, b=cc_b, c=cc_c, sigma_smear=1.2
     )
     generate_spectrum(
         cc_sys, r, all_pdg.get("cc", {}), "Charmonium (c_cbar)", cc_names, r_max=10.0
     )
 
+    print("\n--- Fitting/Loading B_c Meson Parameters ---")
+    bc_alpha_s, bc_b, bc_c = get_or_fit_parameters(
+        m_1=4.730,
+        m_2=1.500,
+        pdg_data=all_pdg.get("bc", {}),
+        r=r,
+        initial_guesses=[0.390, 0.183, -0.090],
+        csv_path=os.path.join(results_dir, "bc_params.csv"),
+    )
     bc_sys = QuarkoniumSystem(
-        m_1=4.730, m_2=1.500, alpha_s=0.390, b=0.183, c=-0.090, sigma_smear=1.35
+        m_1=4.730, m_2=1.500, alpha_s=bc_alpha_s, b=bc_b, c=bc_c, sigma_smear=1.35
     )
     generate_spectrum(
         bc_sys, r, all_pdg.get("bc", {}), "B_c Meson (b_cbar)", bc_names, r_max=7.0
