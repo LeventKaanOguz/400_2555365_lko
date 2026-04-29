@@ -1,9 +1,0 @@
-Method,E0 (Ground State),E1 (1st Excited),E0 Absolute Error,E1 Absolute Error
-Perturbation (1st),75.50000,376.50000,7.24e+01,3.65e+02
-Perturbation (2nd),-26174.50000,-205873.50000,2.62e+04,2.06e+05
-Variational (Gauss),3.19243,11.32478,6.10e-02,1.38e-01
-Variational (Exp),6.32986,15.67195,3.20e+00,4.48e+00
-Variational (Poly-Exp),3.79206,12.31767,6.61e-01,1.13e+00
-Variational (Poly-Gauss),3.13138,11.18745,4.03e-06,2.18e-04
-Shooting IVP,3.13138,11.18725,3.25e-06,2.33e-05
-Numerical: Matrix FD,3.13138,11.18723,-,-

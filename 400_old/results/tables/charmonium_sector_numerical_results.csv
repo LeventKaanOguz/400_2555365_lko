@@ -1,5 +1,0 @@
-Method,E_1S (GeV),E_2S (GeV),Mass 1S (GeV),Mass 1S Diff (MeV),Mass 1S % Error,Mass 2S (GeV),Mass 2S Diff (MeV),Mass 2S % Error
-Variational (Harmonic),0.04694,0.69147,3.04694,63.04,2.113%,3.69147,5.37,0.146%
-Variational (Hydrogenic),0.02061,0.64733,3.02061,36.71,1.230%,3.64733,-38.77,1.052%
-Variational (Power),0.04694,0.24513,3.04694,63.04,2.113%,3.24513,-440.97,11.963%
-Variational (GEM),0.01216,0.69098,3.01216,28.26,0.947%,3.69098,4.88,0.132%
