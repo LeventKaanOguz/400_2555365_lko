@@ -14,7 +14,13 @@ from quarkonia.metrics import (
     format_and_evaluate,
     export_gem_parameters,
 )
-from quarkonia.observables import get_mass, check_virial_theorem
+from quarkonia.observables import (
+    get_mass,
+    check_virial_theorem,
+    get_leptonic_width,
+    get_two_photon_width,
+    get_decay_constant,
+)
 from quarkonia.fitter import get_or_fit_parameters
 
 
@@ -33,8 +39,15 @@ def generate_spectrum(
     """
     calculated_masses = {}
     calculated_wavefuncs = {}
+    calculated_observables = {}
 
     l_chars = {0: "S", 1: "P", 2: "D", 3: "F"}
+
+    e_q = 0.0
+    if "b_bbar" in sector_name:
+        e_q = -1.0 / 3.0
+    elif "c_cbar" in sector_name:
+        e_q = 2.0 / 3.0
 
     print(f"\nSolving GEM eigenstates for {sector_name}...")
     for l in range(max_l + 1):
@@ -97,7 +110,44 @@ def generate_spectrum(
                     calculated_masses[name] = mass
                     calculated_wavefuncs[name] = u_gem[:, state_idx]
 
+                    # --- Compute Decay Observables ---
+                    if l == 0 and state_idx < 2:  # Only evaluate for 1S and 2S states
+                        if spin == 0 and "b_cbar" not in sector_name:
+                            width_gg = get_two_photon_width(
+                                mass,
+                                evecs[:, state_idx],
+                                nu_array,
+                                sys_obj,
+                                e_q,
+                            )
+                            calculated_observables[name] = (
+                                f"Two-Photon Width (γγ): {width_gg:.2f} keV"
+                            )
+                        elif spin == 1 and "b_cbar" not in sector_name:
+                            width_ee = get_leptonic_width(
+                                mass,
+                                evecs[:, state_idx],
+                                nu_array,
+                                sys_obj,
+                                e_q,
+                            )
+                            calculated_observables[name] = (
+                                f"Leptonic Width (e+e-): {width_ee:.2f} keV"
+                            )
+                        elif spin == 0 and "b_cbar" in sector_name:
+                            f_P = get_decay_constant(
+                                mass, evecs[:, state_idx], nu_array, sys_obj
+                            )
+                            calculated_observables[name] = (
+                                f"Decay Constant (f_Bc): {f_P:.2f} MeV"
+                            )
+
     format_and_evaluate(calculated_masses, pdg_data, sector_name)
+
+    if calculated_observables:
+        print(f"\n--- Decay Observables for {sector_name} ---")
+        for state, obs_str in calculated_observables.items():
+            print(f"{state:<15} | {obs_str}")
 
 
 if __name__ == "__main__":

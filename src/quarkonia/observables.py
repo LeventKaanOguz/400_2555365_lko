@@ -166,40 +166,50 @@ def get_mass(
     return bare_mass + so_shift + tensor_shift
 
 
-def calc_psi_at_origin_squared(c_vec, nu_array, l):
+# Fundamental QFT Constants
+ALPHA_EM = 1.0 / 137.036
+
+
+def calc_R_origin_sq_hypervirial(c_vec, nu_array, sys, l=0):
     """
-    Calculates |psi(0)|^2 for L=0 states.
-    For L > 0, psi(0) = 0.
-    The radial wavefunction R(r) = u(r)/r = sum_k c_k r^l e^(-nu_k r^2).
-    For L=0, R(r) = sum_k c_k e^(-nu_k r^2).
-    So R(0) = sum_k c_k.
-    The c_vec are coefficients for the normalized basis functions.
+    Calculates |R(0)|^2 in GeV^3 natively using the Schwinger/Hypervirial Theorem.
+    R(0)^2 = 2 * mu * < dV/dr >
+    This perfectly accounts for the Coulomb cusp that Gaussians struggle to fit.
     """
-    if l != 0:
+    if l > 0:
         return 0.0
 
-    psi_0 = 0.0
-    for i in range(len(nu_array)):
-        psi_0 += c_vec[i] / np.sqrt(
-            analytical_integral(2 * l + 2, 2.0 * nu_array[i])
-        )  # This normalization is for u(r) = r^(l+1)exp(-nu r^2)
-    return psi_0**2
+    # Reconstruct the normalized c_i coefficients for the u(r) basis
+    norms = np.sqrt(analytical_integral(2, 2.0 * nu_array))
+    c_norm = c_vec / norms
+
+    # Evaluate the exact expectation matrix for <1/r^2>
+    nu_ij = nu_array[:, np.newaxis] + nu_array[np.newaxis, :]
+    I_0 = analytical_integral(0, nu_ij)
+
+    exp_1_over_r2 = np.sum(c_norm[:, np.newaxis] * c_norm[np.newaxis, :] * I_0)
+
+    # R(0)^2 = 2 * mu * [ (4*alpha_s / 3) * <1/r^2> + b ]
+    r_origin_sq = 2.0 * sys.mu * ((4.0 * sys.alpha_s / 3.0) * exp_1_over_r2 + sys.b)
+
+    return r_origin_sq
 
 
-def calc_leptonic_decay_width(psi_0_sq, M_V, e_q, alpha_s):
-    """
-    Calculates the leptonic decay width using the Van Royen-Weisskopf formula.
-    Gamma(V -> e+ e-) = (4 * alpha_em^2 * e_q^2 / M_V^2) * |psi(0)|^2 * (1 - 16*alpha_s / (3*pi))
-    alpha_em = 1/137.036 (fine-structure constant)
-    e_q: quark charge (e.g., 2/3 for charm, -1/3 for bottom)
-    M_V: vector meson mass
-    psi_0_sq: |psi(0)|^2
-    alpha_s: strong coupling constant
-    """
-    alpha_em = 1.0 / 137.036
-    correction_factor = 1.0 - (16.0 * alpha_s) / (3.0 * np.pi)
-    if correction_factor < 0:  # Ensure the correction factor is not negative
-        correction_factor = 0.0
+def get_leptonic_width(mass_GeV, c_vec, nu_array, sys, e_q):
+    R_0_sq = calc_R_origin_sq_hypervirial(c_vec, nu_array, sys, l=0)
+    qcd_correction = 1.0 - (16.0 * sys.alpha_s) / (3.0 * np.pi)
+    width_GeV = (4.0 * ALPHA_EM**2 * e_q**2) / (mass_GeV**2) * R_0_sq * qcd_correction
+    return width_GeV * 1e6  # Return in keV
 
-    gamma_ee = (4.0 * alpha_em**2 * e_q**2 / M_V**2) * psi_0_sq * correction_factor
-    return gamma_ee
+
+def get_two_photon_width(mass_GeV, c_vec, nu_array, sys, e_q):
+    R_0_sq = calc_R_origin_sq_hypervirial(c_vec, nu_array, sys, l=0)
+    qcd_correction = 1.0 - (3.4 * sys.alpha_s) / np.pi
+    width_GeV = (3.0 * ALPHA_EM**2 * e_q**4) / (mass_GeV**2) * R_0_sq * qcd_correction
+    return width_GeV * 1e6  # Return in keV
+
+
+def get_decay_constant(mass_GeV, c_vec, nu_array, sys):
+    R_0_sq = calc_R_origin_sq_hypervirial(c_vec, nu_array, sys, l=0)
+    f_P_sq = (3.0 / (np.pi * mass_GeV)) * R_0_sq
+    return np.sqrt(f_P_sq) * 1000.0  # Return in MeV
