@@ -224,7 +224,31 @@ def fit_and_save_parameters(
     output_csv="results/fitted_parameters.csv",
     bounds=None,
 ):
-    """Runs the optimization and saves the result to a CSV file."""
+    """
+    Runs the optimization and saves the result to a CSV file.
+
+    Parameters
+    ----------
+    m_1 : float
+        Mass of the first quark.
+    m_2 : float
+        Mass of the second quark.
+    pdg_data : dict
+        Experimental PDG mass data.
+    r : array-like
+        Spatial coordinate array.
+    initial_guesses : list
+        List of initial parameters [alpha_s, b, c].
+    output_csv : str, optional
+        File path to save the fitted parameters, by default "results/fitted_parameters.csv".
+    bounds : tuple, optional
+        Bounds for the optimization, by default None.
+
+    Returns
+    -------
+    numpy.ndarray
+        The optimized parameters array.
+    """
     print(f"Running fitter for {output_csv}... This may take a moment.")
 
     if bounds is None:
@@ -255,7 +279,19 @@ def fit_and_save_parameters(
 
 
 def load_parameters(csv_path="results/fitted_parameters.csv"):
-    """Loads fitted parameters from a CSV file."""
+    """
+    Loads fitted parameters from a CSV file.
+
+    Parameters
+    ----------
+    csv_path : str, optional
+        Path to the saved CSV parameter file, by default "results/fitted_parameters.csv".
+
+    Returns
+    -------
+    list
+        List of loaded parameters.
+    """
     with open(csv_path, mode="r") as f:
         reader = csv.reader(f)
         next(reader)  # Skip header
@@ -272,7 +308,33 @@ def get_or_fit_parameters(
     force_refit=False,
     bounds=None,
 ):
-    """Automatically runs the fitter if the CSV is missing, otherwise loads from CSV."""
+    """
+    Automatically runs the fitter if the CSV is missing, otherwise loads from CSV.
+
+    Parameters
+    ----------
+    m_1 : float
+        Mass of the first quark.
+    m_2 : float
+        Mass of the second quark.
+    pdg_data : dict
+        Experimental PDG mass data.
+    r : array-like
+        Spatial coordinate array.
+    initial_guesses : list
+        List of initial parameters [alpha_s, b, c].
+    csv_path : str, optional
+        File path for the parameters CSV, by default "results/fitted_parameters.csv".
+    force_refit : bool, optional
+        Whether to force optimization ignoring cached CSV, by default False.
+    bounds : tuple, optional
+        Bounds for the optimization, by default None.
+
+    Returns
+    -------
+    list or numpy.ndarray
+        The phenomenological parameters [alpha_s, b, c].
+    """
     if force_refit or not os.path.exists(csv_path):
         return fit_and_save_parameters(
             m_1,

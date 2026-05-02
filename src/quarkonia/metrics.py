@@ -40,7 +40,20 @@ def format_and_evaluate(calculated_states, pdg_data, sector_name):
 
 
 def export_gem_parameters(nu_array, evecs, l_str, sector_name):
-    """Exports the compact 25-row analytical GEM coefficients."""
+    """
+    Exports the compact 25-row analytical GEM coefficients.
+
+    Parameters
+    ----------
+    nu_array : numpy.ndarray
+        Array of Gaussian basis widths.
+    evecs : numpy.ndarray
+        Matrix containing the computed eigenvectors.
+    l_str : str
+        String representation of the orbital angular momentum.
+    sector_name : str
+        Name of the corresponding particle sector.
+    """
     out_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "results")
     )

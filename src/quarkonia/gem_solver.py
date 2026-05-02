@@ -4,7 +4,21 @@ from scipy.special import gamma
 
 
 def analytical_integral(p, nu):
-    r"""Helper function for analytical Gaussian integrals: \int_0^\infty r^p e^{-nu r^2} dr"""
+    r"""
+    Helper function for analytical Gaussian integrals: \int_0^\infty r^p e^{-nu r^2} dr
+
+    Parameters
+    ----------
+    p : float
+        Power of r.
+    nu : float or numpy.ndarray
+        Gaussian width parameter.
+
+    Returns
+    -------
+    float or numpy.ndarray
+        The computed analytical integral.
+    """
     return 0.5 * gamma((p + 1.0) / 2.0) / (nu ** ((p + 1.0) / 2.0))
 
 

@@ -36,6 +36,23 @@ def generate_spectrum(
     """
     Dynamically generates the full spectroscopic multiplet n^(2S+1)L_J
     and maps them to standard meson names.
+
+    Parameters
+    ----------
+    sys_obj : QuarkoniumSystem
+        Quarkonium system parameters object.
+    r : numpy.ndarray
+        Spatial grid arrays mapping distances.
+    pdg_data : dict
+        Experimental PDG mass data.
+    sector_name : str
+        Particle sector designation (e.g. 'Charmonium').
+    particle_names : dict
+        Dictionary mapping standard family symbols to specific states.
+    max_n : int, optional
+        Maximum primary quantum number limit, by default 3.
+    max_l : int, optional
+        Maximum orbital angular momentum limit, by default 2.
     """
     calculated_masses = {}
     calculated_wavefuncs = {}

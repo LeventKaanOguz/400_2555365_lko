@@ -62,6 +62,28 @@ def calc_tensor_mixing_exact(c_vec_l0, nu_array_l0, c_vec_l2, nu_array_l2, sys, 
     """
     Calculates the off-diagonal tensor matrix element <^3S_1 | V_T | ^3D_1>.
     This mixes states with L=0 and L=2 for S=1, J=1.
+
+    Parameters
+    ----------
+    c_vec_l0 : numpy.ndarray
+        Eigenvector coefficients for the L=0 state.
+    nu_array_l0 : numpy.ndarray
+        Gaussian basis widths for the L=0 state.
+    c_vec_l2 : numpy.ndarray
+        Eigenvector coefficients for the L=2 state.
+    nu_array_l2 : numpy.ndarray
+        Gaussian basis widths for the L=2 state.
+    sys : QuarkoniumSystem
+        Quarkonium system representation object.
+    s : int
+        Spin quantum number.
+    j : int
+        Total angular momentum quantum number.
+
+    Returns
+    -------
+    float
+        The computed tensor mixing matrix element.
     """
     if s != 1 or j != 1:  # Only for S=1, J=1 states
         return 0.0
@@ -96,6 +118,22 @@ def check_virial_theorem(c_vec, nu_array, sys, l):
     """
     Calculates the Virial ratio: 2 <T> / < (4 * alpha_s / 3r) + b * r >
     If the basis is complete and well-optimized, this ratio must be identically 1.0.
+
+    Parameters
+    ----------
+    c_vec : numpy.ndarray
+        Eigenvector coefficients.
+    nu_array : numpy.ndarray
+        Gaussian basis widths.
+    sys : QuarkoniumSystem
+        Quarkonium system representation object.
+    l : int
+        Orbital angular momentum quantum number.
+
+    Returns
+    -------
+    float
+        The computed virial ratio.
     """
     t_exp = 0.0
     v_coulomb_exp = 0.0
@@ -154,6 +192,32 @@ def get_mass(
     """
     Returns the total mass. Hyperfine is handled variationally, but Spin-Orbit
     and Tensor interactions are evaluated perturbatively to avoid 1/r^3 collapse.
+
+    Parameters
+    ----------
+    bare_e : numpy.ndarray
+        Eigenvalues for the bare energy.
+    evecs : numpy.ndarray
+        Eigenvectors representing states.
+    nu_array : numpy.ndarray
+        Gaussian basis widths.
+    sys : QuarkoniumSystem
+        Quarkonium system representation object.
+    state_idx : int
+        Index for the targeted state.
+    spin : int
+        Spin quantum number.
+    l : int
+        Orbital angular momentum quantum number.
+    j : int, optional
+        Total angular momentum quantum number, by default 0.
+    include_tensor_shift : bool, optional
+        Flag to include tensor shift perturbations, by default True.
+
+    Returns
+    -------
+    float
+        Total perturbatively corrected mass.
     """
     bare_mass = sys.M_bare + bare_e[state_idx]
     c_vec = evecs[:, state_idx]
@@ -175,6 +239,22 @@ def calc_R_origin_sq_hypervirial(c_vec, nu_array, sys, l=0):
     Calculates |R(0)|^2 in GeV^3 natively using the Schwinger/Hypervirial Theorem.
     R(0)^2 = 2 * mu * < dV/dr >
     This perfectly accounts for the Coulomb cusp that Gaussians struggle to fit.
+
+    Parameters
+    ----------
+    c_vec : numpy.ndarray
+        Eigenvector coefficients.
+    nu_array : numpy.ndarray
+        Gaussian basis widths.
+    sys : QuarkoniumSystem
+        Quarkonium system representation object.
+    l : int, optional
+        Orbital angular momentum quantum number, by default 0.
+
+    Returns
+    -------
+    float
+        The R(0) squared value in GeV^3.
     """
     if l > 0:
         return 0.0
