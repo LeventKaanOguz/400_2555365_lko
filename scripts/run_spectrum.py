@@ -13,13 +13,14 @@ from quarkonia.gem_solver import QuarkoniumSystem, solve_gem
 from quarkonia.metrics import (
     format_and_evaluate,
     export_gem_parameters,
+    export_observables,
 )
 from quarkonia.observables import (
     get_mass,
     check_virial_theorem,
     get_leptonic_width,
     get_two_photon_width,
-    get_decay_constant,
+    get_3p0_decay_width,
 )
 from quarkonia.fitter import get_or_fit_parameters
 
@@ -56,15 +57,20 @@ def generate_spectrum(
     """
     calculated_masses = {}
     calculated_wavefuncs = {}
+    calculated_evecs = {}
     calculated_observables = {}
 
     l_chars = {0: "S", 1: "P", 2: "D", 3: "F"}
 
+    # Charge assignment for EM annihilation decays
     e_q = 0.0
     if "b_bbar" in sector_name:
         e_q = -1.0 / 3.0
     elif "c_cbar" in sector_name:
         e_q = 2.0 / 3.0
+    # Note: b_cbar (B_c meson) is excluded because it is a charged, mixed-flavor
+    # meson. It cannot annihilate into e+e- via a virtual photon. Its leptonic
+    # decays proceed via the weak interaction (W boson -> l + nu).
 
     print(f"\nSolving GEM eigenstates for {sector_name}...")
     for l in range(max_l + 1):
@@ -126,45 +132,48 @@ def generate_spectrum(
                     )
                     calculated_masses[name] = mass
                     calculated_wavefuncs[name] = u_gem[:, state_idx]
+                    calculated_evecs[name] = evecs[:, state_idx]
 
                     # --- Compute Decay Observables ---
-                    if l == 0 and state_idx < 2:  # Only evaluate for 1S and 2S states
-                        if spin == 0 and "b_cbar" not in sector_name:
-                            width_gg = get_two_photon_width(
-                                mass,
-                                evecs[:, state_idx],
-                                nu_array,
-                                sys_obj,
-                                e_q,
-                            )
-                            calculated_observables[name] = (
-                                f"Two-Photon Width (γγ): {width_gg:.2f} keV"
-                            )
-                        elif spin == 1 and "b_cbar" not in sector_name:
+                    # Evaluate for all single-flavor states (excluding B_c sector)
+                    if e_q != 0.0:
+                        if spin == 1:
                             width_ee = get_leptonic_width(
                                 mass,
                                 evecs[:, state_idx],
                                 nu_array,
                                 sys_obj,
                                 e_q,
+                                l=l,
                             )
                             calculated_observables[name] = (
-                                f"Leptonic Width (e+e-): {width_ee:.2f} keV"
+                                "Leptonic Width (e+e-)",
+                                width_ee,
                             )
-                        elif spin == 0 and "b_cbar" in sector_name:
-                            f_P = get_decay_constant(
-                                mass, evecs[:, state_idx], nu_array, sys_obj
+                        elif spin == 0:
+                            width_gg = get_two_photon_width(
+                                mass,
+                                evecs[:, state_idx],
+                                nu_array,
+                                sys_obj,
+                                e_q,
+                                l=l,
                             )
                             calculated_observables[name] = (
-                                f"Decay Constant (f_Bc): {f_P:.2f} MeV"
+                                "Two-Photon Width (γγ)",
+                                width_gg,
                             )
 
     format_and_evaluate(calculated_masses, pdg_data, sector_name)
 
     if calculated_observables:
         print(f"\n--- Decay Observables for {sector_name} ---")
-        for state, obs_str in calculated_observables.items():
-            print(f"{state:<15} | {obs_str}")
+        for state, (obs_type, obs_val) in calculated_observables.items():
+            print(f"{state:<15} | {obs_type}: {obs_val:.2f} keV")
+
+        export_observables(calculated_observables, sector_name)
+
+    return calculated_masses, calculated_evecs, nu_array
 
 
 if __name__ == "__main__":
@@ -220,7 +229,7 @@ if __name__ == "__main__":
     bb_sys = QuarkoniumSystem(  # sigma_smear will be calculated dynamically
         m_1=4.730, m_2=4.730, alpha_s=bb_alpha_s, b=bb_b, c=bb_c
     )
-    generate_spectrum(
+    bb_masses, bb_evecs, bb_nu = generate_spectrum(
         bb_sys,
         r,
         all_pdg.get("bb", {}),
@@ -240,7 +249,7 @@ if __name__ == "__main__":
     cc_sys = QuarkoniumSystem(  # sigma_smear will be calculated dynamically
         m_1=1.500, m_2=1.500, alpha_s=cc_alpha_s, b=cc_b, c=cc_c
     )
-    generate_spectrum(
+    cc_masses, cc_evecs, cc_nu = generate_spectrum(
         cc_sys,
         r,
         all_pdg.get("cc", {}),
@@ -273,10 +282,66 @@ if __name__ == "__main__":
     bc_sys = QuarkoniumSystem(  # sigma_smear will be calculated dynamically
         m_1=4.730, m_2=1.500, alpha_s=bc_alpha_s, b=bc_b, c=bc_c
     )
-    generate_spectrum(
+    bc_masses, bc_evecs, bc_nu = generate_spectrum(
         bc_sys,
         r,
         all_pdg.get("bc", {}),
         "B_c Meson (b_cbar)",
         bc_names,
     )
+
+    # =========================================================================
+    # HADRONIC DECAY SHOWCASE: psi(3770) -> D + Dbar using 3P0 Vacuum Creation
+    # =========================================================================
+    print("\n--- Fitting/Loading D Meson (c_ubar) Parameters for Hadronic Decays ---")
+    m_u = 0.330  # Constituent light quark mass in GeV
+    cu_alpha_s, cu_b, cu_c = get_or_fit_parameters(
+        m_1=1.500,
+        m_2=m_u,
+        pdg_data={"(1^1S)": 1.864},  # D0 mass
+        r=r,
+        initial_guesses=[0.500, 0.180, -0.400],
+        csv_path=os.path.join(results_dir, "cu_params.csv"),
+        bounds=([0.2, 0.1, -1.0], [0.8, 0.3, 1.0]),
+    )
+    cu_sys = QuarkoniumSystem(m_1=1.500, m_2=m_u, alpha_s=cu_alpha_s, b=cu_b, c=cu_c)
+    cu_names = {"1S": "D", "3S": "D^*"}
+
+    cu_masses, cu_evecs, cu_nu = generate_spectrum(
+        cu_sys, r, {"(1^1S)": 1.864}, "D Meson (c_ubar)", cu_names, max_n=1, max_l=0
+    )
+
+    psi_name = "(1^3D_1) ψ"  # D-wave charmonium psi(3770)
+    D_name = "(1^1S) D"  # S-wave D meson
+
+    if psi_name in cc_masses and D_name in cu_masses:
+        mass_psi = cc_masses[psi_name]
+        mass_D = cu_masses[D_name]
+
+        c_psi = cc_evecs[psi_name]
+        c_D = cu_evecs[D_name]
+
+        width_3p0 = get_3p0_decay_width(
+            mass_A=mass_psi,
+            mass_B=mass_D,
+            mass_C=mass_D,
+            c_A=c_psi,
+            nu_A=cc_nu,
+            c_B=c_D,
+            nu_B=cu_nu,
+            c_C=c_D,
+            nu_C=cu_nu,
+            l_A=2,  # psi(3770) is an L=2 state
+            gamma_3p0=0.4,  # Phenomenological 3P0 strength parameter
+        )
+
+        print("\n" + "=" * 80)
+        print(f"--- Showcase: Hadronic Decay via 3P0 Model ---")
+        print(f"Transition: {psi_name} -> {D_name} + {D_name}bar")
+        print(f"Mass {psi_name}: {mass_psi:.4f} GeV")
+        print(f"Mass {D_name} (x2):  {mass_D * 2.0:.4f} GeV")
+        if mass_psi > 2.0 * mass_D:
+            print(f"Calculated 3P0 Decay Width: {width_3p0:.2f} MeV")
+        else:
+            print("Decay is kinematically forbidden (Mass A < Mass B + Mass C).")
+        print("=" * 80 + "\n")

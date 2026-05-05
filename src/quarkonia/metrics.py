@@ -72,3 +72,22 @@ def export_gem_parameters(nu_array, evecs, l_str, sector_name):
         os.path.join(out_dir, f"{sector_name}_{l_str}_Wave_GEM_Coefficients.csv"),
         index=False,
     )
+
+
+def export_observables(calculated_observables, sector_name):
+    """
+    Exports the computed decay observables to a CSV file.
+    """
+    out_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "results")
+    )
+    os.makedirs(out_dir, exist_ok=True)
+
+    csv_path = os.path.join(out_dir, f"{sector_name}_observables.csv")
+    # Using utf-8 encoding to support unicode characters like γ
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["State", "Observable_Type", "Value_keV"])
+
+        for state, (obs_type, obs_val) in calculated_observables.items():
+            writer.writerow([state, obs_type, f"{obs_val:.4f}"])
