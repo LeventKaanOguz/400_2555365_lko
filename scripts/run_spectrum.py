@@ -115,6 +115,161 @@ def propagate_uncertainty(
     )
 
 
+def parse_state_name(state_name):
+    name_part = state_name.split()[0]
+    n = int(name_part[1])
+    spin = 1 if name_part[3] == "3" else 0
+    l_char = name_part[4]
+    l = {"S": 0, "P": 1, "D": 2, "F": 3}[l_char]
+    if "_" in name_part:
+        j = int(name_part.split("_")[1].replace(")", ""))
+    else:
+        if l == 0:
+            j = 1 if spin == 1 else 0
+        else:
+            j = l
+    return l, spin, n - 1, j
+
+
+def propagate_transition_uncertainty(
+    sys_obj,
+    r,
+    params_err,
+    state_i_name,
+    state_f_name,
+    decay_type,
+    e_q=0.0,
+    gamma_3p0=0.4,
+    m_B=None,
+    evec_B=None,
+    nu_B=None,
+    m_C=None,
+    evec_C=None,
+    nu_C=None,
+):
+    eps = 1e-4
+    dobs_dp = []
+
+    l_i, spin_i, idx_i, j_i = parse_state_name(state_i_name)
+    if decay_type in ["M1", "E1"]:
+        l_f, spin_f, idx_f, j_f = parse_state_name(state_f_name)
+
+    for p_idx in range(3):
+        if params_err[p_idx] == 0.0:
+            dobs_dp.append(0.0)
+            continue
+
+        p_up = [sys_obj.alpha_s, sys_obj.b, sys_obj.c]
+        p_dn = [sys_obj.alpha_s, sys_obj.b, sys_obj.c]
+
+        p_up[p_idx] += eps
+        p_dn[p_idx] -= eps
+
+        sys_up = QuarkoniumSystem(sys_obj.m_1, sys_obj.m_2, *p_up)
+        sys_dn = QuarkoniumSystem(sys_obj.m_1, sys_obj.m_2, *p_dn)
+
+        # solve up
+        evals_i_up, _, evecs_i_up, nu_i_up = solve_gem(sys_up, r, l=l_i, spin=spin_i)
+        m_i_up = get_mass(
+            evals_i_up, evecs_i_up, nu_i_up, sys_up, idx_i, spin_i, l_i, j_i
+        )
+
+        # solve dn
+        evals_i_dn, _, evecs_i_dn, nu_i_dn = solve_gem(sys_dn, r, l=l_i, spin=spin_i)
+        m_i_dn = get_mass(
+            evals_i_dn, evecs_i_dn, nu_i_dn, sys_dn, idx_i, spin_i, l_i, j_i
+        )
+
+        if decay_type in ["M1", "E1"]:
+            evals_f_up, _, evecs_f_up, nu_f_up = solve_gem(
+                sys_up, r, l=l_f, spin=spin_f
+            )
+            m_f_up = get_mass(
+                evals_f_up, evecs_f_up, nu_f_up, sys_up, idx_f, spin_f, l_f, j_f
+            )
+
+            evals_f_dn, _, evecs_f_dn, nu_f_dn = solve_gem(
+                sys_dn, r, l=l_f, spin=spin_f
+            )
+            m_f_dn = get_mass(
+                evals_f_dn, evecs_f_dn, nu_f_dn, sys_dn, idx_f, spin_f, l_f, j_f
+            )
+
+            if decay_type == "M1":
+                w_up = get_m1_decay_width(
+                    m_i_up,
+                    m_f_up,
+                    evecs_i_up[:, idx_i],
+                    nu_i_up,
+                    evecs_f_up[:, idx_f],
+                    nu_f_up,
+                    sys_up,
+                    e_q,
+                )
+                w_dn = get_m1_decay_width(
+                    m_i_dn,
+                    m_f_dn,
+                    evecs_i_dn[:, idx_i],
+                    nu_i_dn,
+                    evecs_f_dn[:, idx_f],
+                    nu_f_dn,
+                    sys_dn,
+                    e_q,
+                )
+            else:
+                w_up = get_e1_decay_width(
+                    m_i_up,
+                    m_f_up,
+                    evecs_i_up[:, idx_i],
+                    nu_i_up,
+                    evecs_f_up[:, idx_f],
+                    nu_f_up,
+                    sys_up,
+                    e_q,
+                )
+                w_dn = get_e1_decay_width(
+                    m_i_dn,
+                    m_f_dn,
+                    evecs_i_dn[:, idx_i],
+                    nu_i_dn,
+                    evecs_f_dn[:, idx_f],
+                    nu_f_dn,
+                    sys_dn,
+                    e_q,
+                )
+        elif decay_type == "3P0":
+            w_up = get_3p0_decay_width(
+                m_i_up,
+                m_B,
+                m_C,
+                evecs_i_up[:, idx_i],
+                nu_i_up,
+                evec_B,
+                nu_B,
+                evec_C,
+                nu_C,
+                l_A=l_i,
+                gamma_3p0=gamma_3p0,
+            )
+            w_dn = get_3p0_decay_width(
+                m_i_dn,
+                m_B,
+                m_C,
+                evecs_i_dn[:, idx_i],
+                nu_i_dn,
+                evec_B,
+                nu_B,
+                evec_C,
+                nu_C,
+                l_A=l_i,
+                gamma_3p0=gamma_3p0,
+            )
+
+        dobs_dp.append(((w_up - w_dn) / (2 * eps)) * params_err[p_idx])
+
+    return np.sqrt(np.sum(np.array(dobs_dp) ** 2))
+
+
 def generate_spectrum(
     sys_obj: QuarkoniumSystem,
     r,
@@ -462,7 +617,13 @@ if __name__ == "__main__":
             max_n=config["max_n"],
             max_l=config["max_l"],
         )
-        results_dict[config["id"]] = {"masses": masses, "evecs": evecs, "nu": nu}
+        results_dict[config["id"]] = {
+            "masses": masses,
+            "evecs": evecs,
+            "nu": nu,
+            "sys_obj": sys_obj,
+            "errs": errs,
+        }
 
     # =========================================================================
     # HADRONIC DECAY SHOWCASE: psi(3770) -> D + Dbar using 3P0 Vacuum Creation
@@ -546,6 +707,22 @@ if __name__ == "__main__":
                 l_A=2,
                 gamma_3p0=gamma_tuned,
             )
+
+            width_pred_err = propagate_transition_uncertainty(
+                sys_obj=results_dict["cc"]["sys_obj"],
+                r=r,
+                params_err=results_dict["cc"]["errs"],
+                state_i_name=psi_excited,
+                state_f_name=None,
+                decay_type="3P0",
+                gamma_3p0=gamma_tuned,
+                m_B=mass_D,
+                evec_B=c_D,
+                nu_B=cu_nu,
+                m_C=mass_D,
+                evec_C=c_D,
+                nu_C=cu_nu,
+            )
             print("-" * 80)
             print(
                 f"Predicting Higher-Order Hadronic Decay: {psi_excited} -> {D_name} + {D_name}bar"
@@ -553,7 +730,7 @@ if __name__ == "__main__":
             print(f"Mass {psi_excited}: {mass_psi_exc:.4f} GeV")
             if mass_psi_exc > 2.0 * mass_D:
                 print(
-                    f"Predicted Width (using tuned gamma={gamma_tuned:.4f}): {width_pred:.2f} MeV"
+                    f"Predicted Width (using tuned gamma={gamma_tuned:.4f}): {width_pred:.2f} ± {width_pred_err:.2f} MeV"
                 )
             else:
                 print("Decay is kinematically forbidden.")
@@ -584,9 +761,8 @@ if __name__ == "__main__":
         evecs = results_dict[sector]["evecs"]
         nu = results_dict[sector]["nu"]
 
-        m1_mass = 4.730 if sector == "bb" else 1.500
-        m2_mass = 4.730 if sector == "bb" else 1.500
-        sys_obj = QuarkoniumSystem(m_1=m1_mass, m_2=m2_mass, alpha_s=0, b=0, c=0)
+        sys_obj = results_dict[sector]["sys_obj"]
+        errs = results_dict[sector]["errs"]
 
         for state_i, state_f in m1_pairs:
             if state_i in masses and state_f in masses:
@@ -595,8 +771,11 @@ if __name__ == "__main__":
                 w_m1 = get_m1_decay_width(
                     m_i, m_f, evecs[state_i], nu, evecs[state_f], nu, sys_obj, eq
                 )
+                w_m1_err = propagate_transition_uncertainty(
+                    sys_obj, r, errs, state_i, state_f, "M1", e_q=eq
+                )
                 print(
-                    f"[{sector.upper()}] M1: {state_i:<15} -> {state_f:<15} + γ : {w_m1:.3f} keV"
+                    f"[{sector.upper()}] M1: {state_i:<15} -> {state_f:<15} + γ : {w_m1:.3f} ± {w_m1_err:.3f} keV"
                 )
                 radiative_results.append(
                     {
@@ -604,6 +783,7 @@ if __name__ == "__main__":
                         "Transition": f"{state_i} -> {state_f} + γ",
                         "Type": "M1",
                         "Width_keV": w_m1,
+                        "Width_err_keV": w_m1_err,
                     }
                 )
 
@@ -614,8 +794,11 @@ if __name__ == "__main__":
                 w_e1 = get_e1_decay_width(
                     m_i, m_f, evecs[state_i], nu, evecs[state_f], nu, sys_obj, eq
                 )
+                w_e1_err = propagate_transition_uncertainty(
+                    sys_obj, r, errs, state_i, state_f, "E1", e_q=eq
+                )
                 print(
-                    f"[{sector.upper()}] E1: {state_i:<15} -> {state_f:<15} + γ : {w_e1:.3f} keV"
+                    f"[{sector.upper()}] E1: {state_i:<15} -> {state_f:<15} + γ : {w_e1:.3f} ± {w_e1_err:.3f} keV"
                 )
                 radiative_results.append(
                     {
@@ -623,6 +806,7 @@ if __name__ == "__main__":
                         "Transition": f"{state_i} -> {state_f} + γ",
                         "Type": "E1",
                         "Width_keV": w_e1,
+                        "Width_err_keV": w_e1_err,
                     }
                 )
 
