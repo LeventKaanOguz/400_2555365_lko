@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import numpy as np
+import pandas as pd
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
@@ -14,16 +15,20 @@ from quarkonia.metrics import (
     format_and_evaluate,
     export_gem_parameters,
     export_observables,
+    generate_consolidated_report,
 )
 from quarkonia.observables import (
     get_mass,
     check_virial_theorem,
+    calc_rms_radius,
 )
 from quarkonia.decay_models import (
     get_leptonic_width,
     get_two_photon_width,
     get_3p0_decay_width,
     tune_gamma_3p0,
+    get_m1_decay_width,
+    get_e1_decay_width,
 )
 from quarkonia.fitter import get_or_fit_parameters
 
@@ -227,6 +232,13 @@ def generate_spectrum(
                     calculated_wavefuncs[name] = u_gem[:, state_idx]
                     calculated_evecs[name] = evecs[:, state_idx]
 
+                    # RMS Radius Calculation
+                    rms_rad = calc_rms_radius(evecs[:, state_idx], nu_array, l=l)
+                    calculated_observables[name + "_rms"] = (
+                        "RMS Radius (GeV^-1)",
+                        rms_rad,
+                        0.0,
+                    )
                     # --- Compute Decay Observables ---
                     if e_q != 0.0:
                         if spin == 1:
@@ -337,49 +349,24 @@ if __name__ == "__main__":
         os.path.join(os.path.dirname(__file__), "..", "results")
     )
 
-    print("\n--- Fitting/Loading Bottomonium Parameters ---")
-    (bb_alpha_s, bb_b, bb_c), bb_errs = get_or_fit_parameters(
-        m_1=4.730,
-        m_2=4.730,
-        pdg_data=all_pdg.get("bb", {}),
-        r=r,
-        initial_guesses=[0.350, 0.193, 0.030],
-        csv_path=os.path.join(results_dir, "bb_params.csv"),
-    )
-    bb_sys = QuarkoniumSystem(  # sigma_smear will be calculated dynamically
-        m_1=4.730, m_2=4.730, alpha_s=bb_alpha_s, b=bb_b, c=bb_c
-    )
-    bb_masses, bb_evecs, bb_nu = generate_spectrum(
-        bb_sys,
-        r,
-        all_pdg.get("bb", {}),
-        "Bottomonium (b_bbar)",
-        bb_names,
-        params_err=bb_errs,
-    )
-
-    print("\n--- Fitting/Loading Charmonium Parameters ---")
-    (cc_alpha_s, cc_b, cc_c), cc_errs = get_or_fit_parameters(
-        m_1=1.500,  # Charm quark mass
-        m_2=1.500,  # Charm quark mass
-        pdg_data=all_pdg.get("cc", {}),
-        r=r,
-        initial_guesses=[0.400, 0.183, -0.250],
-        csv_path=os.path.join(results_dir, "cc_params.csv"),
-    )
-    cc_sys = QuarkoniumSystem(  # sigma_smear will be calculated dynamically
-        m_1=1.500, m_2=1.500, alpha_s=cc_alpha_s, b=cc_b, c=cc_c
-    )
-    cc_masses, cc_evecs, cc_nu = generate_spectrum(
-        cc_sys,
-        r,
+    # We need to get bb and cc alpha_s first to do the B_c interpolation
+    (cc_alpha_s, _, _), _ = get_or_fit_parameters(
+        1.500,
+        1.500,
         all_pdg.get("cc", {}),
-        "Charmonium (c_cbar)",
-        cc_names,
-        params_err=cc_errs,
+        r,
+        [0.400, 0.183, -0.250],
+        os.path.join(results_dir, "cc_params.csv"),
+    )
+    (bb_alpha_s, _, _), _ = get_or_fit_parameters(
+        4.730,
+        4.730,
+        all_pdg.get("bb", {}),
+        r,
+        [0.350, 0.193, 0.030],
+        os.path.join(results_dir, "bb_params.csv"),
     )
 
-    print("\n--- Fitting/Loading B_c Meson Parameters ---")
     # QFT Logarithmic Interpolation of alpha_s based on reduced mass scale
     mu_cc = 1.500 / 2.0
     mu_bb = 4.730 / 2.0
@@ -392,54 +379,100 @@ if __name__ == "__main__":
     )
     bc_alpha_s_qft = 1.0 / inv_alpha_bc
 
-    (bc_alpha_s, bc_b, bc_c), bc_errs = get_or_fit_parameters(
-        m_1=4.730,
-        m_2=1.500,
-        pdg_data=all_pdg.get("bc", {}),
-        r=r,
-        initial_guesses=[bc_alpha_s_qft, 0.183, -0.090],
-        csv_path=os.path.join(results_dir, "bc_params.csv"),
-        bounds=([bc_alpha_s_qft - 1e-5, 0.1, -1.0], [bc_alpha_s_qft + 1e-5, 0.35, 1.0]),
-    )
-    bc_sys = QuarkoniumSystem(  # sigma_smear will be calculated dynamically
-        m_1=4.730, m_2=1.500, alpha_s=bc_alpha_s, b=bc_b, c=bc_c
-    )
-    bc_masses, bc_evecs, bc_nu = generate_spectrum(
-        bc_sys,
-        r,
-        all_pdg.get("bc", {}),
-        "B_c Meson (b_cbar)",
-        bc_names,
-        params_err=bc_errs,
-    )
+    m_u = 0.330  # Constituent light quark mass in GeV
+    cu_names = {"1S": "D", "3S": "D^*"}
+
+    sectors_config = [
+        {
+            "id": "bb",
+            "name": "Bottomonium (b_bbar)",
+            "m_1": 4.730,
+            "m_2": 4.730,
+            "pdg_data": all_pdg.get("bb", {}),
+            "names": bb_names,
+            "initial_guesses": [0.350, 0.193, 0.030],
+            "bounds": None,
+            "max_n": 3,
+            "max_l": 2,
+        },
+        {
+            "id": "cc",
+            "name": "Charmonium (c_cbar)",
+            "m_1": 1.500,
+            "m_2": 1.500,
+            "pdg_data": all_pdg.get("cc", {}),
+            "names": cc_names,
+            "initial_guesses": [0.400, 0.183, -0.250],
+            "bounds": None,
+            "max_n": 3,
+            "max_l": 2,
+        },
+        {
+            "id": "bc",
+            "name": "B_c Meson (b_cbar)",
+            "m_1": 4.730,
+            "m_2": 1.500,
+            "pdg_data": all_pdg.get("bc", {}),
+            "names": bc_names,
+            "initial_guesses": [bc_alpha_s_qft, 0.183, -0.090],
+            "bounds": (
+                [bc_alpha_s_qft - 1e-5, 0.1, -1.0],
+                [bc_alpha_s_qft + 1e-5, 0.35, 1.0],
+            ),
+            "max_n": 3,
+            "max_l": 2,
+        },
+        {
+            "id": "cu",
+            "name": "D Meson (c_ubar)",
+            "m_1": 1.500,
+            "m_2": m_u,
+            "pdg_data": {"(1^1S)": 1.864},
+            "names": cu_names,
+            "initial_guesses": [0.500, 0.180, -0.400],
+            "bounds": ([0.2, 0.1, -1.0], [0.8, 0.3, 1.0]),
+            "max_n": 1,
+            "max_l": 0,
+        },
+    ]
+
+    results_dict = {}
+
+    for config in sectors_config:
+        print(f"\n--- Fitting/Loading {config['name']} Parameters ---")
+        (alpha_s, b, c), errs = get_or_fit_parameters(
+            m_1=config["m_1"],
+            m_2=config["m_2"],
+            pdg_data=config["pdg_data"],
+            r=r,
+            initial_guesses=config["initial_guesses"],
+            csv_path=os.path.join(results_dir, f"{config['id']}_params.csv"),
+            bounds=config["bounds"],
+        )
+        sys_obj = QuarkoniumSystem(
+            m_1=config["m_1"], m_2=config["m_2"], alpha_s=alpha_s, b=b, c=c
+        )
+        masses, evecs, nu = generate_spectrum(
+            sys_obj,
+            r,
+            config["pdg_data"],
+            config["name"],
+            config["names"],
+            params_err=errs,
+            max_n=config["max_n"],
+            max_l=config["max_l"],
+        )
+        results_dict[config["id"]] = {"masses": masses, "evecs": evecs, "nu": nu}
 
     # =========================================================================
     # HADRONIC DECAY SHOWCASE: psi(3770) -> D + Dbar using 3P0 Vacuum Creation
     # =========================================================================
-    print("\n--- Fitting/Loading D Meson (c_ubar) Parameters for Hadronic Decays ---")
-    m_u = 0.330  # Constituent light quark mass in GeV
-    (cu_alpha_s, cu_b, cu_c), cu_errs = get_or_fit_parameters(
-        m_1=1.500,
-        m_2=m_u,
-        pdg_data={"(1^1S)": 1.864},  # D0 mass
-        r=r,
-        initial_guesses=[0.500, 0.180, -0.400],
-        csv_path=os.path.join(results_dir, "cu_params.csv"),
-        bounds=([0.2, 0.1, -1.0], [0.8, 0.3, 1.0]),
-    )
-    cu_sys = QuarkoniumSystem(m_1=1.500, m_2=m_u, alpha_s=cu_alpha_s, b=cu_b, c=cu_c)
-    cu_names = {"1S": "D", "3S": "D^*"}
-
-    cu_masses, cu_evecs, cu_nu = generate_spectrum(
-        cu_sys,
-        r,
-        {"(1^1S)": 1.864},
-        "D Meson (c_ubar)",
-        cu_names,
-        params_err=cu_errs,
-        max_n=1,
-        max_l=0,
-    )
+    cc_masses = results_dict["cc"]["masses"]
+    cc_evecs = results_dict["cc"]["evecs"]
+    cc_nu = results_dict["cc"]["nu"]
+    cu_masses = results_dict["cu"]["masses"]
+    cu_evecs = results_dict["cu"]["evecs"]
+    cu_nu = results_dict["cu"]["nu"]
 
     psi_name = "(1^3D_1) ψ"  # D-wave charmonium psi(3770)
     D_name = "(1^1S) D"  # S-wave D meson
@@ -524,4 +557,81 @@ if __name__ == "__main__":
                 )
             else:
                 print("Decay is kinematically forbidden.")
-        print("=" * 80 + "\n")
+
+    # =========================================================================
+    # RADIATIVE DECAY SHOWCASE: M1 and E1 Transitions
+    # =========================================================================
+    print("\n" + "=" * 80)
+    print("--- Radiative Transitions (M1 & E1) ---")
+
+    radiative_results = []
+
+    for sector, eq, m1_pairs, e1_pairs in [
+        (
+            "cc",
+            2.0 / 3.0,
+            [("(1^3S) J/ψ", "(1^1S) η_c"), ("(2^3S) ψ", "(2^1S) η_c")],
+            [("(1^3P_0) χ_c", "(1^3S) J/ψ"), ("(1^3P_1) χ_c", "(1^3S) J/ψ")],
+        ),
+        (
+            "bb",
+            -1.0 / 3.0,
+            [("(1^3S) Υ_b", "(1^1S) η_b"), ("(2^3S) Υ", "(2^1S) η_b")],
+            [("(1^3P_0) χ_b", "(1^3S) Υ_b"), ("(1^3P_1) χ_b", "(1^3S) Υ_b")],
+        ),
+    ]:
+        masses = results_dict[sector]["masses"]
+        evecs = results_dict[sector]["evecs"]
+        nu = results_dict[sector]["nu"]
+
+        m1_mass = 4.730 if sector == "bb" else 1.500
+        m2_mass = 4.730 if sector == "bb" else 1.500
+        sys_obj = QuarkoniumSystem(m_1=m1_mass, m_2=m2_mass, alpha_s=0, b=0, c=0)
+
+        for state_i, state_f in m1_pairs:
+            if state_i in masses and state_f in masses:
+                m_i, _ = masses[state_i]
+                m_f, _ = masses[state_f]
+                w_m1 = get_m1_decay_width(
+                    m_i, m_f, evecs[state_i], nu, evecs[state_f], nu, sys_obj, eq
+                )
+                print(
+                    f"[{sector.upper()}] M1: {state_i:<15} -> {state_f:<15} + γ : {w_m1:.3f} keV"
+                )
+                radiative_results.append(
+                    {
+                        "Sector": sector.upper(),
+                        "Transition": f"{state_i} -> {state_f} + γ",
+                        "Type": "M1",
+                        "Width_keV": w_m1,
+                    }
+                )
+
+        for state_i, state_f in e1_pairs:
+            if state_i in masses and state_f in masses:
+                m_i, _ = masses[state_i]
+                m_f, _ = masses[state_f]
+                w_e1 = get_e1_decay_width(
+                    m_i, m_f, evecs[state_i], nu, evecs[state_f], nu, sys_obj, eq
+                )
+                print(
+                    f"[{sector.upper()}] E1: {state_i:<15} -> {state_f:<15} + γ : {w_e1:.3f} keV"
+                )
+                radiative_results.append(
+                    {
+                        "Sector": sector.upper(),
+                        "Transition": f"{state_i} -> {state_f} + γ",
+                        "Type": "E1",
+                        "Width_keV": w_e1,
+                    }
+                )
+
+    if radiative_results:
+        rad_df = pd.DataFrame(radiative_results)
+        rad_csv_path = os.path.join(results_dir, "radiative_decays.csv")
+        rad_df.to_csv(rad_csv_path, index=False)
+        print(f"\nExported radiative transitions to {rad_csv_path}")
+
+    print("=" * 80 + "\n")
+
+    generate_consolidated_report()

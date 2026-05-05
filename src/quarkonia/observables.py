@@ -228,3 +228,23 @@ def get_mass(
         else 0.0
     )
     return bare_mass + so_shift + tensor_shift
+
+
+def calc_rms_radius(c_vec, nu_array, l=0):
+    """
+    Calculates the root-mean-square (RMS) radius sqrt(<r^2>) of a state.
+    """
+    r2_exp = 0.0
+    for i in range(len(nu_array)):
+        norm_i = np.sqrt(analytical_integral(2 * l + 2, 2.0 * nu_array[i]))
+        for k in range(len(nu_array)):
+            norm_k = np.sqrt(analytical_integral(2 * l + 2, 2.0 * nu_array[k]))
+            nu_ik = nu_array[i] + nu_array[k]
+
+            term_r2 = analytical_integral(2 * l + 4, nu_ik)
+
+            c_i = c_vec[i] / norm_i
+            c_k = c_vec[k] / norm_k
+            r2_exp += c_i * c_k * term_r2
+
+    return np.sqrt(r2_exp)

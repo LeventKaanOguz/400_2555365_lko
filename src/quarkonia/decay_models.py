@@ -157,3 +157,61 @@ def tune_gamma_3p0(
 
     res = least_squares(objective, [initial_gamma], bounds=([0.0], [np.inf]))
     return res.x[0]
+
+
+def get_m1_decay_width(mass_i, mass_f, c_i, nu_i, c_f, nu_f, sys, e_q):
+    """
+    Calculates the Magnetic Dipole (M1) radiative transition width (e.g., V -> P + gamma).
+    """
+    if mass_i <= mass_f:
+        return 0.0
+
+    k = (mass_i**2 - mass_f**2) / (2.0 * mass_i)
+
+    overlap = 0.0
+    norms_i = np.sqrt(analytical_integral(2, 2.0 * nu_i))
+    norms_f = np.sqrt(analytical_integral(2, 2.0 * nu_f))
+
+    c_norm_i = c_i / norms_i
+    c_norm_f = c_f / norms_f
+
+    for idx_i in range(len(nu_i)):
+        for idx_f in range(len(nu_f)):
+            nu_sum = nu_i[idx_i] + nu_f[idx_f]
+            I_ij = analytical_integral(2, nu_sum)  # L=0 overlap integral p=2
+            overlap += c_norm_i[idx_i] * c_norm_f[idx_f] * I_ij
+
+    magnetic_factor = (1.0 / sys.m_1 + 1.0 / sys.m_2) ** 2 / 4.0
+    width_GeV = (
+        (4.0 / 3.0) * ALPHA_EM * (e_q**2) * (k**3) * magnetic_factor * (overlap**2)
+    )
+
+    return width_GeV * 1e6  # Return in keV
+
+
+def get_e1_decay_width(mass_i, mass_f, c_i, nu_i, c_f, nu_f, sys, e_q):
+    """
+    Calculates the Electric Dipole (E1) radiative transition width.
+    Approximated for a P -> S + gamma transition.
+    """
+    if mass_i <= mass_f:
+        return 0.0
+
+    k = (mass_i**2 - mass_f**2) / (2.0 * mass_i)
+
+    matrix_element = 0.0
+    norms_i = np.sqrt(analytical_integral(4, 2.0 * nu_i))  # P-wave norm (L=1 -> p=4)
+    norms_f = np.sqrt(analytical_integral(2, 2.0 * nu_f))  # S-wave norm (L=0 -> p=2)
+
+    c_norm_i = c_i / norms_i
+    c_norm_f = c_f / norms_f
+
+    for idx_i in range(len(nu_i)):
+        for idx_f in range(len(nu_f)):
+            nu_sum = nu_i[idx_i] + nu_f[idx_f]
+            I_ij = analytical_integral(4, nu_sum)  # <f|r|i> integral p=4
+            matrix_element += c_norm_i[idx_i] * c_norm_f[idx_f] * I_ij
+
+    width_GeV = (4.0 / 9.0) * ALPHA_EM * (e_q**2) * (k**3) * (matrix_element**2)
+
+    return width_GeV * 1e6  # Return in keV

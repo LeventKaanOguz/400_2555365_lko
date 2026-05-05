@@ -1,5 +1,6 @@
 import csv
 import os
+import json
 import pandas as pd
 import numpy as np
 
@@ -7,9 +8,9 @@ import numpy as np
 def format_and_evaluate(calculated_states, pdg_data, sector_name):
     print(f"\n--- Error Analysis vs Experimental Data ({sector_name}) ---")
     print(
-        f"{'State':<18} | {'Calculated [GeV]':<25} | {'Experimental [GeV]':<18} | {'Abs Error [MeV]':<15} | {'% Error':<10}"
+        f"{'State':<18} | {'Calculated [GeV]':<25} | {'Experimental [GeV]':<18} | {'Abs Error [MeV]':<15} | {'% Error':<10} | {'MSE [MeV^2]':<15}"
     )
-    print("-" * 95)
+    print("-" * 115)
 
     results = []
     for state, calc_data in calculated_states.items():
@@ -26,13 +27,18 @@ def format_and_evaluate(calculated_states, pdg_data, sector_name):
         if exp_mass is not None:
             abs_err = (calc_mass - exp_mass) * 1000.0
             pct_err = abs(calc_mass - exp_mass) / exp_mass * 100.0
+            mse = abs_err**2
             print(
-                f"{state:<18} | {calc_str:<25} | {exp_mass:<18.4f} | {abs_err:<15.1f} | {pct_err:<10.3f}"
+                f"{state:<18} | {calc_str:<25} | {exp_mass:<18.4f} | {abs_err:<15.1f} | {pct_err:<10.3f} | {mse:<15.2f}"
             )
-            results.append([state, calc_mass, mass_err, exp_mass, abs_err, pct_err])
+            results.append(
+                [state, calc_mass, mass_err, exp_mass, abs_err, pct_err, mse]
+            )
         else:
-            print(f"{state:<18} | {calc_str:<25} | {'-':<18} | {'-':<15} | {'-':<10}")
-            results.append([state, calc_mass, mass_err, "N/A", "N/A", "N/A"])
+            print(
+                f"{state:<18} | {calc_str:<25} | {'-':<18} | {'-':<15} | {'-':<10} | {'-':<15}"
+            )
+            results.append([state, calc_mass, mass_err, "N/A", "N/A", "N/A", "N/A"])
 
     out_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "results")
@@ -48,6 +54,7 @@ def format_and_evaluate(calculated_states, pdg_data, sector_name):
                     "Exp_GeV",
                     "Abs_Err_MeV",
                     "Pct_Err",
+                    "MSE_MeV2",
                 ]
             ]
             + results
@@ -106,3 +113,96 @@ def export_observables(calculated_observables, sector_name):
 
         for state, (obs_type, obs_val, obs_err) in calculated_observables.items():
             writer.writerow([state, obs_type, f"{obs_val:.4f}", f"{obs_err:.4f}"])
+
+
+def generate_consolidated_report():
+    """
+    Reads the individual error and observable CSVs and cross-references them with pdg_data.json
+    to generate a consolidated error report containing Abs Error, % Error, and MSE.
+    """
+    pdg_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "data", "pdg_data.json")
+    )
+    with open(pdg_path, "r") as f:
+        pdg_data = json.load(f)
+
+    results_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "results")
+    )
+
+    sectors = [
+        ("bb", "Bottomonium (b_bbar)"),
+        ("cc", "Charmonium (c_cbar)"),
+        ("bc", "B_c Meson (b_cbar)"),
+        ("cu", "D Meson (c_ubar)"),
+    ]
+
+    report_data = []
+
+    # Process Masses
+    for sector_id, sector_name in sectors:
+        mass_csv = os.path.join(results_dir, f"{sector_name}_errors.csv")
+        if os.path.exists(mass_csv):
+            df_mass = pd.read_csv(mass_csv)
+            df_valid = df_mass[df_mass["Exp_GeV"] != "N/A"].copy()
+            for _, row in df_valid.iterrows():
+                state = row["State"]
+                calc_val = float(row["Calculated_GeV"])
+                exp_val = float(row["Exp_GeV"])
+                abs_err_mev = float(row["Abs_Err_MeV"])
+                pct_err = float(row["Pct_Err"])
+                mse = float(row["MSE_MeV2"])
+
+                report_data.append(
+                    {
+                        "Sector": sector_id.upper(),
+                        "Property": "Mass (GeV)",
+                        "State": state,
+                        "Calculated": calc_val,
+                        "Experimental": exp_val,
+                        "Absolute_Error": abs_err_mev,
+                        "Percentage_Error": pct_err,
+                        "MSE": mse,
+                    }
+                )
+
+        obs_csv = os.path.join(results_dir, f"{sector_name}_observables.csv")
+        if os.path.exists(obs_csv):
+            df_obs = pd.read_csv(obs_csv)
+            for _, row in df_obs.iterrows():
+                state_full = row["State"]
+                state_label = state_full.split()[0]
+                obs_type = row["Observable_Type"]
+                calc_val = float(row["Value_keV"])
+
+                exp_val = None
+                if "e+e-" in obs_type:
+                    db_key = f"{sector_id}_widths_ee_keV"
+                    exp_val = pdg_data.get(db_key, {}).get(state_label)
+                elif "γγ" in obs_type or "gamma" in obs_type:
+                    db_key = f"{sector_id}_widths_gammagamma_keV"
+                    exp_val = pdg_data.get(db_key, {}).get(state_label)
+
+                if exp_val is not None and exp_val > 0:
+                    abs_err = abs(calc_val - exp_val)
+                    pct_err = (abs_err / exp_val) * 100.0
+                    mse = abs_err**2
+
+                    report_data.append(
+                        {
+                            "Sector": sector_id.upper(),
+                            "Property": obs_type,
+                            "State": state_full,
+                            "Calculated": calc_val,
+                            "Experimental": exp_val,
+                            "Absolute_Error": abs_err,
+                            "Percentage_Error": pct_err,
+                            "MSE": mse,
+                        }
+                    )
+
+    if report_data:
+        df_report = pd.DataFrame(report_data)
+        report_path = os.path.join(results_dir, "consolidated_error_report.csv")
+        df_report.to_csv(report_path, index=False)
+        print(f"\nConsolidated error report generated and saved to {report_path}")
