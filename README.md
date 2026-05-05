@@ -52,6 +52,10 @@ Instead, we apply the Schwinger/Hypervirial relation:
 $$ |R(0)|^2 = 2 \mu \left\langle \frac{dV}{dr} \right\rangle $$
 This projects the contact probability onto a global expectation value, yielding highly accurate, cusp-independent calculations.
 
+Using $|R(0)|^2$, we can compute physical decay rates, such as the **Leptonic Decay** ($V \rightarrow e^+e^-$) for Vector Mesons (Spin = 1) like $J/\psi$ or $\Upsilon(1S)$:
+$$ \Gamma_{e^+e^-} = \frac{4 \alpha_{em}^2 e_q^2}{M^2} |R(0)|^2 \left( 1 - \frac{16\alpha_s}{3\pi} \right) $$
+where $\alpha_{em} \approx 1/137.036$, $e_q$ is the fractional quark charge, and the rightmost term provides the first-order perturbative QCD correction. To properly account for hard gluon exchanges during annihilation at very short ranges, we evaluate the high-energy running coupling $\alpha_s(m_q)$ at the heavy quark mass scale ($\approx 0.35$ for charmonium, $\approx 0.20$ for bottomonium) rather than using the long-range parameter fitted to the Cornell potential.
+
 ### 4. Automated Global Fitter
 The framework features an automated optimization routine (`fitter.py`) using Levenberg-Marquardt (Trust Region Reflective) least-squares regression. It dynamically fine-tunes the physical parameters ($m, \alpha_s, b, c$) against a weighted subset of Particle Data Group empirical masses, effectively allowing the model to "learn" the optimal QCD potential parameters.
 
