@@ -267,15 +267,31 @@ def fit_and_save_parameters(
 
     optimized_params = result.x
 
-    # Ensure the directory exists and save parameters to a CSV file
+    # Calculate covariance and parameter errors using the Jacobian
+    try:
+        U, s, Vh = np.linalg.svd(result.jac, full_matrices=False)
+        tol = np.finfo(float).eps * s[0] * max(result.jac.shape)
+        w = s > tol
+        cov = (Vh[w].T / s[w] ** 2) @ Vh[w]
+        dof = len(result.fun) - len(result.x)
+        if dof > 0:
+            s_sq = 2 * result.cost / dof
+            cov *= s_sq
+        else:
+            cov = np.zeros((len(result.x), len(result.x)))
+    except Exception:
+        cov = np.zeros((len(result.x), len(result.x)))
+
+    perr = np.sqrt(np.diag(cov))
+
     os.makedirs(os.path.dirname(output_csv) or ".", exist_ok=True)
     with open(output_csv, mode="w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["alpha_s", "b", "c"])
-        writer.writerow(optimized_params)
+        writer.writerow(["alpha_s", "b", "c", "err_alpha_s", "err_b", "err_c"])
+        writer.writerow(list(optimized_params) + list(perr))
 
     print(f"Parameters successfully fitted and saved to {output_csv}")
-    return optimized_params
+    return optimized_params, perr
 
 
 def load_parameters(csv_path="results/fitted_parameters.csv"):
@@ -295,7 +311,14 @@ def load_parameters(csv_path="results/fitted_parameters.csv"):
     with open(csv_path, mode="r") as f:
         reader = csv.reader(f)
         next(reader)  # Skip header
-        return [float(val) for val in next(reader)]
+        row = next(reader)
+        params = [float(row[0]), float(row[1]), float(row[2])]
+        perr = (
+            [float(row[3]), float(row[4]), float(row[5])]
+            if len(row) > 3
+            else [0.0, 0.0, 0.0]
+        )
+        return params, perr
 
 
 def get_or_fit_parameters(

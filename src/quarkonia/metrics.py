@@ -7,27 +7,32 @@ import numpy as np
 def format_and_evaluate(calculated_states, pdg_data, sector_name):
     print(f"\n--- Error Analysis vs Experimental Data ({sector_name}) ---")
     print(
-        f"{'State':<18} | {'Calculated [GeV]':<18} | {'Experimental [GeV]':<18} | {'Abs Error [MeV]':<15} | {'% Error':<10}"
+        f"{'State':<18} | {'Calculated [GeV]':<25} | {'Experimental [GeV]':<18} | {'Abs Error [MeV]':<15} | {'% Error':<10}"
     )
-    print("-" * 88)
+    print("-" * 95)
 
     results = []
-    for state, calc_mass in calculated_states.items():
+    for state, calc_data in calculated_states.items():
+        if isinstance(calc_data, tuple):
+            calc_mass, mass_err = calc_data
+        else:
+            calc_mass, mass_err = calc_data, 0.0
+
         pure_state = state.split()[0]
         exp_mass = pdg_data.get(pure_state, None)
+
+        calc_str = f"{calc_mass:.4f} ± {mass_err:.4f}"
 
         if exp_mass is not None:
             abs_err = (calc_mass - exp_mass) * 1000.0
             pct_err = abs(calc_mass - exp_mass) / exp_mass * 100.0
             print(
-                f"{state:<18} | {calc_mass:<18.4f} | {exp_mass:<18.4f} | {abs_err:<15.1f} | {pct_err:<10.3f}"
+                f"{state:<18} | {calc_str:<25} | {exp_mass:<18.4f} | {abs_err:<15.1f} | {pct_err:<10.3f}"
             )
-            results.append([state, calc_mass, exp_mass, abs_err, pct_err])
+            results.append([state, calc_mass, mass_err, exp_mass, abs_err, pct_err])
         else:
-            print(
-                f"{state:<18} | {calc_mass:<18.4f} | {'-':<18} | {'-':<15} | {'-':<10}"
-            )
-            results.append([state, calc_mass, "N/A", "N/A", "N/A"])
+            print(f"{state:<18} | {calc_str:<25} | {'-':<18} | {'-':<15} | {'-':<10}")
+            results.append([state, calc_mass, mass_err, "N/A", "N/A", "N/A"])
 
     out_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "results")
@@ -35,7 +40,17 @@ def format_and_evaluate(calculated_states, pdg_data, sector_name):
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, f"{sector_name}_errors.csv"), "w", newline="") as f:
         csv.writer(f).writerows(
-            [["State", "Calculated_GeV", "Exp_GeV", "Abs_Err_MeV", "Pct_Err"]] + results
+            [
+                [
+                    "State",
+                    "Calculated_GeV",
+                    "Mass_Err_GeV",
+                    "Exp_GeV",
+                    "Abs_Err_MeV",
+                    "Pct_Err",
+                ]
+            ]
+            + results
         )
 
 
@@ -87,7 +102,7 @@ def export_observables(calculated_observables, sector_name):
     # Using utf-8 encoding to support unicode characters like γ
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["State", "Observable_Type", "Value_keV"])
+        writer.writerow(["State", "Observable_Type", "Value_keV", "Error_keV"])
 
-        for state, (obs_type, obs_val) in calculated_observables.items():
-            writer.writerow([state, obs_type, f"{obs_val:.4f}"])
+        for state, (obs_type, obs_val, obs_err) in calculated_observables.items():
+            writer.writerow([state, obs_type, f"{obs_val:.4f}", f"{obs_err:.4f}"])

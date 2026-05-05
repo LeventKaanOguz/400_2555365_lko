@@ -18,11 +18,96 @@ from quarkonia.metrics import (
 from quarkonia.observables import (
     get_mass,
     check_virial_theorem,
+)
+from quarkonia.decay_models import (
     get_leptonic_width,
     get_two_photon_width,
     get_3p0_decay_width,
+    tune_gamma_3p0,
 )
 from quarkonia.fitter import get_or_fit_parameters
+
+
+def propagate_uncertainty(
+    sys_obj, r, params_err, state_idx, spin, l, j, e_q, obs_type=None
+):
+    """Propagates fitter parameter uncertainty to output observables via localized finite differences."""
+    eps = 1e-4
+    dm_dp = []
+    dobs_dp = []
+    for p_idx in range(3):
+        p_up, p_dn = (
+            [sys_obj.alpha_s, sys_obj.b, sys_obj.c],
+            [sys_obj.alpha_s, sys_obj.b, sys_obj.c],
+        )
+        p_up[p_idx] += eps
+        p_dn[p_idx] -= eps
+
+        sys_up = QuarkoniumSystem(sys_obj.m_1, sys_obj.m_2, *p_up)
+        sys_dn = QuarkoniumSystem(sys_obj.m_1, sys_obj.m_2, *p_dn)
+
+        m_up = get_mass(
+            solve_gem(sys_up, r, l, spin)[0],
+            solve_gem(sys_up, r, l, spin)[2],
+            solve_gem(sys_up, r, l, spin)[3],
+            sys_up,
+            state_idx,
+            spin,
+            l,
+            j,
+        )
+        m_dn = get_mass(
+            solve_gem(sys_dn, r, l, spin)[0],
+            solve_gem(sys_dn, r, l, spin)[2],
+            solve_gem(sys_dn, r, l, spin)[3],
+            sys_dn,
+            state_idx,
+            spin,
+            l,
+            j,
+        )
+        dm_dp.append(((m_up - m_dn) / (2 * eps)) * params_err[p_idx])
+
+        if obs_type == "leptonic":
+            w_up = get_leptonic_width(
+                m_up,
+                solve_gem(sys_up, r, l, spin)[2][:, state_idx],
+                solve_gem(sys_up, r, l, spin)[3],
+                sys_up,
+                e_q,
+                l=l,
+            )
+            w_dn = get_leptonic_width(
+                m_dn,
+                solve_gem(sys_dn, r, l, spin)[2][:, state_idx],
+                solve_gem(sys_dn, r, l, spin)[3],
+                sys_dn,
+                e_q,
+                l=l,
+            )
+            dobs_dp.append(((w_up - w_dn) / (2 * eps)) * params_err[p_idx])
+        elif obs_type == "two_photon":
+            w_up = get_two_photon_width(
+                m_up,
+                solve_gem(sys_up, r, l, spin)[2][:, state_idx],
+                solve_gem(sys_up, r, l, spin)[3],
+                sys_up,
+                e_q,
+                l=l,
+            )
+            w_dn = get_two_photon_width(
+                m_dn,
+                solve_gem(sys_dn, r, l, spin)[2][:, state_idx],
+                solve_gem(sys_dn, r, l, spin)[3],
+                sys_dn,
+                e_q,
+                l=l,
+            )
+            dobs_dp.append(((w_up - w_dn) / (2 * eps)) * params_err[p_idx])
+
+    return np.sqrt(np.sum(np.array(dm_dp) ** 2)), (
+        np.sqrt(np.sum(np.array(dobs_dp) ** 2)) if obs_type else 0.0
+    )
 
 
 def generate_spectrum(
@@ -31,6 +116,7 @@ def generate_spectrum(
     pdg_data,
     sector_name,
     particle_names,
+    params_err=None,
     max_n=3,
     max_l=2,
 ):
@@ -130,12 +216,18 @@ def generate_spectrum(
                     mass = get_mass(
                         evals, evecs, nu_array, sys_obj, state_idx, spin, l, j
                     )
-                    calculated_masses[name] = mass
+
+                    mass_err = 0.0
+                    if params_err is not None and sum(params_err) > 0:
+                        mass_err, _ = propagate_uncertainty(
+                            sys_obj, r, params_err, state_idx, spin, l, j, e_q, None
+                        )
+
+                    calculated_masses[name] = (mass, mass_err)
                     calculated_wavefuncs[name] = u_gem[:, state_idx]
                     calculated_evecs[name] = evecs[:, state_idx]
 
                     # --- Compute Decay Observables ---
-                    # Evaluate for all single-flavor states (excluding B_c sector)
                     if e_q != 0.0:
                         if spin == 1:
                             width_ee = get_leptonic_width(
@@ -146,9 +238,23 @@ def generate_spectrum(
                                 e_q,
                                 l=l,
                             )
+                            obs_err = 0.0
+                            if params_err is not None and sum(params_err) > 0:
+                                _, obs_err = propagate_uncertainty(
+                                    sys_obj,
+                                    r,
+                                    params_err,
+                                    state_idx,
+                                    spin,
+                                    l,
+                                    j,
+                                    e_q,
+                                    "leptonic",
+                                )
                             calculated_observables[name] = (
                                 "Leptonic Width (e+e-)",
                                 width_ee,
+                                obs_err,
                             )
                         elif spin == 0:
                             width_gg = get_two_photon_width(
@@ -159,17 +265,31 @@ def generate_spectrum(
                                 e_q,
                                 l=l,
                             )
+                            obs_err = 0.0
+                            if params_err is not None and sum(params_err) > 0:
+                                _, obs_err = propagate_uncertainty(
+                                    sys_obj,
+                                    r,
+                                    params_err,
+                                    state_idx,
+                                    spin,
+                                    l,
+                                    j,
+                                    e_q,
+                                    "two_photon",
+                                )
                             calculated_observables[name] = (
                                 "Two-Photon Width (γγ)",
                                 width_gg,
+                                obs_err,
                             )
 
     format_and_evaluate(calculated_masses, pdg_data, sector_name)
 
     if calculated_observables:
         print(f"\n--- Decay Observables for {sector_name} ---")
-        for state, (obs_type, obs_val) in calculated_observables.items():
-            print(f"{state:<15} | {obs_type}: {obs_val:.2f} keV")
+        for state, (obs_type, obs_val, obs_err) in calculated_observables.items():
+            print(f"{state:<15} | {obs_type}: {obs_val:.2f} ± {obs_err:.2f} keV")
 
         export_observables(calculated_observables, sector_name)
 
@@ -218,7 +338,7 @@ if __name__ == "__main__":
     )
 
     print("\n--- Fitting/Loading Bottomonium Parameters ---")
-    bb_alpha_s, bb_b, bb_c = get_or_fit_parameters(
+    (bb_alpha_s, bb_b, bb_c), bb_errs = get_or_fit_parameters(
         m_1=4.730,
         m_2=4.730,
         pdg_data=all_pdg.get("bb", {}),
@@ -235,10 +355,11 @@ if __name__ == "__main__":
         all_pdg.get("bb", {}),
         "Bottomonium (b_bbar)",
         bb_names,
+        params_err=bb_errs,
     )
 
     print("\n--- Fitting/Loading Charmonium Parameters ---")
-    cc_alpha_s, cc_b, cc_c = get_or_fit_parameters(
+    (cc_alpha_s, cc_b, cc_c), cc_errs = get_or_fit_parameters(
         m_1=1.500,  # Charm quark mass
         m_2=1.500,  # Charm quark mass
         pdg_data=all_pdg.get("cc", {}),
@@ -255,6 +376,7 @@ if __name__ == "__main__":
         all_pdg.get("cc", {}),
         "Charmonium (c_cbar)",
         cc_names,
+        params_err=cc_errs,
     )
 
     print("\n--- Fitting/Loading B_c Meson Parameters ---")
@@ -270,7 +392,7 @@ if __name__ == "__main__":
     )
     bc_alpha_s_qft = 1.0 / inv_alpha_bc
 
-    bc_alpha_s, bc_b, bc_c = get_or_fit_parameters(
+    (bc_alpha_s, bc_b, bc_c), bc_errs = get_or_fit_parameters(
         m_1=4.730,
         m_2=1.500,
         pdg_data=all_pdg.get("bc", {}),
@@ -288,6 +410,7 @@ if __name__ == "__main__":
         all_pdg.get("bc", {}),
         "B_c Meson (b_cbar)",
         bc_names,
+        params_err=bc_errs,
     )
 
     # =========================================================================
@@ -295,7 +418,7 @@ if __name__ == "__main__":
     # =========================================================================
     print("\n--- Fitting/Loading D Meson (c_ubar) Parameters for Hadronic Decays ---")
     m_u = 0.330  # Constituent light quark mass in GeV
-    cu_alpha_s, cu_b, cu_c = get_or_fit_parameters(
+    (cu_alpha_s, cu_b, cu_c), cu_errs = get_or_fit_parameters(
         m_1=1.500,
         m_2=m_u,
         pdg_data={"(1^1S)": 1.864},  # D0 mass
@@ -308,20 +431,29 @@ if __name__ == "__main__":
     cu_names = {"1S": "D", "3S": "D^*"}
 
     cu_masses, cu_evecs, cu_nu = generate_spectrum(
-        cu_sys, r, {"(1^1S)": 1.864}, "D Meson (c_ubar)", cu_names, max_n=1, max_l=0
+        cu_sys,
+        r,
+        {"(1^1S)": 1.864},
+        "D Meson (c_ubar)",
+        cu_names,
+        params_err=cu_errs,
+        max_n=1,
+        max_l=0,
     )
 
     psi_name = "(1^3D_1) ψ"  # D-wave charmonium psi(3770)
     D_name = "(1^1S) D"  # S-wave D meson
 
     if psi_name in cc_masses and D_name in cu_masses:
-        mass_psi = cc_masses[psi_name]
-        mass_D = cu_masses[D_name]
+        mass_psi = cc_masses[psi_name][0]
+        mass_D = cu_masses[D_name][0]
 
         c_psi = cc_evecs[psi_name]
         c_D = cu_evecs[D_name]
 
-        width_3p0 = get_3p0_decay_width(
+        target_exp_width = 27.2
+        gamma_tuned = tune_gamma_3p0(
+            target_width_MeV=target_exp_width,
             mass_A=mass_psi,
             mass_B=mass_D,
             mass_C=mass_D,
@@ -332,7 +464,21 @@ if __name__ == "__main__":
             c_C=c_D,
             nu_C=cu_nu,
             l_A=2,  # psi(3770) is an L=2 state
-            gamma_3p0=0.4,  # Phenomenological 3P0 strength parameter
+            initial_gamma=0.4,
+        )
+
+        width_3p0_tuned = get_3p0_decay_width(
+            mass_A=mass_psi,
+            mass_B=mass_D,
+            mass_C=mass_D,
+            c_A=c_psi,
+            nu_A=cc_nu,
+            c_B=c_D,
+            nu_B=cu_nu,
+            c_C=c_D,
+            nu_C=cu_nu,
+            l_A=2,
+            gamma_3p0=gamma_tuned,
         )
 
         print("\n" + "=" * 80)
@@ -341,7 +487,41 @@ if __name__ == "__main__":
         print(f"Mass {psi_name}: {mass_psi:.4f} GeV")
         print(f"Mass {D_name} (x2):  {mass_D * 2.0:.4f} GeV")
         if mass_psi > 2.0 * mass_D:
-            print(f"Calculated 3P0 Decay Width: {width_3p0:.2f} MeV")
+            print(
+                f"Tuning 3P0 gamma to match experimental width: {target_exp_width} MeV"
+            )
+            print(f"Optimized gamma value: {gamma_tuned:.4f}")
+            print(f"Calculated 3P0 Decay Width: {width_3p0_tuned:.2f} MeV")
         else:
             print("Decay is kinematically forbidden (Mass A < Mass B + Mass C).")
+
+        # Predict an unknown decay using the locked-in tuned gamma
+        psi_excited = "(2^3D_1) ψ"
+        if psi_excited in cc_masses:
+            mass_psi_exc = cc_masses[psi_excited][0]
+            c_psi_exc = cc_evecs[psi_excited]
+            width_pred = get_3p0_decay_width(
+                mass_A=mass_psi_exc,
+                mass_B=mass_D,
+                mass_C=mass_D,
+                c_A=c_psi_exc,
+                nu_A=cc_nu,
+                c_B=c_D,
+                nu_B=cu_nu,
+                c_C=c_D,
+                nu_C=cu_nu,
+                l_A=2,
+                gamma_3p0=gamma_tuned,
+            )
+            print("-" * 80)
+            print(
+                f"Predicting Higher-Order Hadronic Decay: {psi_excited} -> {D_name} + {D_name}bar"
+            )
+            print(f"Mass {psi_excited}: {mass_psi_exc:.4f} GeV")
+            if mass_psi_exc > 2.0 * mass_D:
+                print(
+                    f"Predicted Width (using tuned gamma={gamma_tuned:.4f}): {width_pred:.2f} MeV"
+                )
+            else:
+                print("Decay is kinematically forbidden.")
         print("=" * 80 + "\n")
