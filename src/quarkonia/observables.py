@@ -90,8 +90,8 @@ def calc_tensor_mixing_exact(c_vec_l0, nu_array_l0, c_vec_l2, nu_array_l2, sys, 
 
     # S12 for mixing L=0 and L=2
     # The tensor operator couples L to L' = L +/- 2.
-    # For L=0, L'=2, the S12 factor is sqrt(8)/5 (from standard Clebsch-Gordan coefficients)
-    s12_mixing = np.sqrt(8.0) / 5.0  # For <L=0, S=1, J=1 | S12 | L=2, S=1, J=1>
+    # For L=0, L'=2, the exact S12 matrix element is sqrt(8).
+    s12_mixing = np.sqrt(8.0)
 
     v_tensor_coeff = (4.0 * sys.alpha_s) / (3.0 * sys.m_1 * sys.m_2)
 

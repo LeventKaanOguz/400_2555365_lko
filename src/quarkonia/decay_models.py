@@ -6,6 +6,19 @@ from .gem_solver import analytical_integral
 ALPHA_EM = 1.0 / 137.036
 
 
+def get_running_alpha_s(sys):
+    """
+    Returns the appropriate high-energy running coupling constant for annihilation decays.
+    """
+    if sys.m_1 > 4.0:
+        # Bottomonium (m_b ≈ 4.73 GeV)
+        alpha_s_run = 0.20
+    else:
+        # Charmonium (m_c ≈ 1.5 GeV)
+        alpha_s_run = 0.35
+    return alpha_s_run
+
+
 def calc_R_origin_sq_hypervirial(c_vec, nu_array, sys, l=0):
     """
     Calculates |R(0)|^2 natively using the Schwinger/Hypervirial Theorem.
@@ -30,25 +43,78 @@ def calc_R_origin_sq_hypervirial(c_vec, nu_array, sys, l=0):
     return r_origin_sq
 
 
+def calc_R_second_deriv_origin_sq(c_vec, nu_array, l=2):
+    """
+    Calculates |R''(0)|^2 analytically for D-wave (L=2) states.
+    For a Gaussian basis R(r) = sum c_i * r^2 * exp(-nu_i * r^2), R''(0) = 2 * sum(c_i).
+    """
+    if l != 2:
+        return 0.0
+
+    norms = np.sqrt(analytical_integral(2 * l + 2, 2.0 * nu_array))
+    c_norm = c_vec / norms
+
+    r_double_prime_0 = 2.0 * np.sum(c_norm)
+    return r_double_prime_0**2
+
+
+def get_leptonic_width_mixed(
+    mass_GeV, c_vec_S, nu_array_S, c_vec_D, nu_array_D, mix_S, mix_D, sys, e_q
+):
+    """
+    Calculates the leptonic decay width (V -> e+ e-) for a mixed S-D state.
+    """
+    alpha_s_run = get_running_alpha_s(sys)
+    qcd_correction = 1.0 - (16.0 * alpha_s_run) / (3.0 * np.pi)
+
+    # Evaluate magnitudes and dynamically retrieve the parity phase/sign
+    R_0_sq = calc_R_origin_sq_hypervirial(c_vec_S, nu_array_S, sys, l=0)
+    norms_S = np.sqrt(analytical_integral(2, 2.0 * nu_array_S))
+    sign_S = np.sign(np.sum(c_vec_S / norms_S))
+    R_0 = sign_S * np.sqrt(R_0_sq)
+
+    R_double_prime_0_sq = calc_R_second_deriv_origin_sq(c_vec_D, nu_array_D, l=2)
+    norms_D = np.sqrt(analytical_integral(6, 2.0 * nu_array_D))
+    sign_D = np.sign(np.sum(c_vec_D / norms_D))
+    R_double_prime_0 = sign_D * np.sqrt(R_double_prime_0_sq)
+
+    # Create the component transition amplitudes
+    amp_S = (2.0 * ALPHA_EM * np.abs(e_q) / mass_GeV) * R_0
+    amp_D = (
+        5.0 * ALPHA_EM * np.abs(e_q) / (np.sqrt(2.0) * sys.m_1**2 * mass_GeV)
+    ) * R_double_prime_0
+
+    total_amp = mix_S * amp_S + mix_D * amp_D
+    width_GeV = (total_amp**2) * qcd_correction
+
+    return width_GeV * 1e6
+
+
 def get_leptonic_width(mass_GeV, c_vec, nu_array, sys, e_q, l=0):
     """
     Calculates the leptonic decay width (V -> e+ e-) for vector mesons (Spin=1).
+    Supports S-wave (L=0) and D-wave (L=2) annihilations.
     """
-    R_0_sq = calc_R_origin_sq_hypervirial(c_vec, nu_array, sys, l=l)
-
-    # Use the high-energy running coupling constant evaluated at the heavy quark mass
-    # scale rather than the long-range fitted Cornell parameter (sys.alpha_s).
-    if sys.m_1 > 4.0:
-        # Bottomonium (m_b ≈ 4.73 GeV)
-        alpha_s_run = 0.20
-    else:
-        # Charmonium (m_c ≈ 1.5 GeV)
-        alpha_s_run = 0.35
-
+    alpha_s_run = get_running_alpha_s(sys)
     # First-order perturbative QCD correction using the running coupling
     qcd_correction = 1.0 - (16.0 * alpha_s_run) / (3.0 * np.pi)
 
-    width_GeV = (4.0 * ALPHA_EM**2 * e_q**2) / (mass_GeV**2) * R_0_sq * qcd_correction
+    if l == 0:
+        R_0_sq = calc_R_origin_sq_hypervirial(c_vec, nu_array, sys, l=l)
+        width_GeV = (
+            (4.0 * ALPHA_EM**2 * e_q**2) / (mass_GeV**2) * R_0_sq * qcd_correction
+        )
+    elif l == 2:
+        R_double_prime_0_sq = calc_R_second_deriv_origin_sq(c_vec, nu_array, l=l)
+        width_GeV = (
+            (25.0 * ALPHA_EM**2 * e_q**2)
+            / (2.0 * sys.m_1**4 * mass_GeV**2)
+            * R_double_prime_0_sq
+            * qcd_correction
+        )
+    else:
+        return 0.0
+
     return width_GeV * 1e6  # Return in keV
 
 
@@ -58,14 +124,10 @@ def get_two_photon_width(mass_GeV, c_vec, nu_array, sys, e_q, l=0):
     """
     R_0_sq = calc_R_origin_sq_hypervirial(c_vec, nu_array, sys, l=l)
 
-    if sys.m_1 > 4.0:
-        alpha_s_run = 0.20
-    else:
-        alpha_s_run = 0.35
-
+    alpha_s_run = get_running_alpha_s(sys)
     qcd_correction = 1.0 - (3.4 * alpha_s_run) / np.pi
 
-    width_GeV = (3.0 * ALPHA_EM**2 * e_q**4) / (mass_GeV**2) * R_0_sq * qcd_correction
+    width_GeV = (12.0 * ALPHA_EM**2 * e_q**4) / (mass_GeV**2) * R_0_sq * qcd_correction
     return width_GeV * 1e6  # Return in keV
 
 

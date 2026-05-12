@@ -24,6 +24,7 @@ from quarkonia.observables import (
 )
 from quarkonia.decay_models import (
     get_leptonic_width,
+    get_leptonic_width_mixed,
     get_two_photon_width,
     get_3p0_decay_width,
     tune_gamma_3p0,
@@ -450,6 +451,33 @@ def generate_spectrum(
                                 width_gg,
                                 obs_err,
                             )
+
+    # Apply S-D mixing for the 2^3S_1 and 1^3D_1 states
+    from quarkonia.observables import calc_tensor_mixing_exact
+    name_2S = "(2^3S) ψ" if "c_cbar" in sector_name else ("(2^3S) Υ" if "b_bbar" in sector_name else "(2^3S) B_c^*")
+    name_1D = "(1^3D_1) ψ" if "c_cbar" in sector_name else ("(1^3D_1) Υ" if "b_bbar" in sector_name else "(1^3D_1) B_{c1,2,3}^*")
+
+    if name_2S in calculated_masses and name_1D in calculated_masses:
+        m_2S_unmixed = calculated_masses[name_2S][0]
+        m_1D_unmixed = calculated_masses[name_1D][0]
+        evec_2S = calculated_evecs[name_2S]
+        evec_1D = calculated_evecs[name_1D]
+
+        mixing_element = calc_tensor_mixing_exact(evec_2S, nu_array, evec_1D, nu_array, sys_obj, s=1, j=1)
+        mixing_matrix = np.array([
+            [m_2S_unmixed, mixing_element],
+            [mixing_element, m_1D_unmixed]
+        ])
+        mixed_masses, mix_evecs = np.linalg.eigh(mixing_matrix)
+
+        calculated_masses[name_2S] = (mixed_masses[0], calculated_masses[name_2S][1])
+        calculated_masses[name_1D] = (mixed_masses[1], calculated_masses[name_1D][1])
+
+        if e_q != 0.0:
+            w_2S = get_leptonic_width_mixed(mixed_masses[0], evec_2S, nu_array, evec_1D, nu_array, mix_evecs[0, 0], mix_evecs[1, 0], sys_obj, e_q)
+            w_1D = get_leptonic_width_mixed(mixed_masses[1], evec_2S, nu_array, evec_1D, nu_array, mix_evecs[0, 1], mix_evecs[1, 1], sys_obj, e_q)
+            calculated_observables[name_2S] = ("Leptonic Width (e+e-)", w_2S, calculated_observables[name_2S][2])
+            calculated_observables[name_1D] = ("Leptonic Width (e+e-)", w_1D, calculated_observables[name_1D][2])
 
     format_and_evaluate(calculated_masses, pdg_data, sector_name)
 

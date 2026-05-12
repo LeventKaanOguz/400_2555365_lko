@@ -23,13 +23,13 @@ def residuals(params, m_1, m_2, pdg_data, r):
         sys, r, l=2, spin=1
     )  # For D-waves (needed for mixing)
 
-    # Calculate unmixed masses (without tensor shift for S=1, J=1 states)
-    mass_1S_1_unmixed = get_mass(
+    # Calculate unmixed masses (without tensor shift for S=1, J=1 states) for 2S and 1D
+    mass_2S_1_unmixed = get_mass(
         evals_1S_1,
         evecs_1S_1,
         nu_1S_1,
         sys,
-        0,
+        1,
         spin=1,
         l=0,
         j=1,
@@ -48,28 +48,28 @@ def residuals(params, m_1, m_2, pdg_data, r):
     )
 
     # Calculate diagonal tensor shifts for S=1, J=1 states
-    tensor_shift_1S_1 = calc_tensor_shift_exact(
-        evecs_1S_1[:, 0], nu_1S_1, sys, l=0, s=1, j=1
+    tensor_shift_2S_1 = calc_tensor_shift_exact(
+        evecs_1S_1[:, 1], nu_1S_1, sys, l=0, s=1, j=1
     )
     tensor_shift_1D_1 = calc_tensor_shift_exact(
         evecs_1D_1[:, 0], nu_1D_1, sys, l=2, s=1, j=1
     )
 
-    # Calculate off-diagonal tensor mixing element <^3S_1 | V_T | ^3D_1>
+    # Calculate off-diagonal tensor mixing element <2^3S_1 | V_T | 1^3D_1>
     mixing_element = calc_tensor_mixing_exact(
-        evecs_1S_1[:, 0], nu_1S_1, evecs_1D_1[:, 0], nu_1D_1, sys, s=1, j=1
+        evecs_1S_1[:, 1], nu_1S_1, evecs_1D_1[:, 0], nu_1D_1, sys, s=1, j=1
     )
 
     # Construct and diagonalize the 2x2 mixing matrix for J=1, S=1 states
     mixing_matrix = np.array(
         [
-            [mass_1S_1_unmixed + tensor_shift_1S_1, mixing_element],
+            [mass_2S_1_unmixed + tensor_shift_2S_1, mixing_element],
             [mixing_element, mass_1D_1_unmixed + tensor_shift_1D_1],
         ]
     )
     mixed_masses = np.linalg.eigvalsh(mixing_matrix)
-    # The lowest eigenvalue corresponds to the J/psi (1^3S_1) and the higher to psi(1^3D_1)
-    mass_1S_1_mixed = mixed_masses[0]
+    # The lowest eigenvalue corresponds to psi(2S) and the higher to psi(1^3D_1)
+    mass_2S_1_mixed = mixed_masses[0]
     mass_1D_1_mixed = mixed_masses[1]
 
     calc = {
@@ -84,7 +84,16 @@ def residuals(params, m_1, m_2, pdg_data, r):
             l=0,
             j=0,
         ),
-        "(1^3S)": mass_1S_1_mixed,  # Use mixed mass for J/psi
+        "(1^3S)": get_mass(
+            evals_1S_1,
+            evecs_1S_1,
+            nu_1S_1,
+            sys,
+            0,
+            spin=1,
+            l=0,
+            j=1,
+        ),
         "(1^1P)": get_mass(
             evals_1P_0,
             evecs_1P_0,
