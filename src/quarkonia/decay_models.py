@@ -221,6 +221,42 @@ def tune_gamma_3p0(
     return res.x[0]
 
 
+def calc_R_prime_origin_sq(c_vec, nu_array, l=1):
+    """
+    Calculates |R'(0)|^2 for P-wave (L=1) states.
+    For R(r) = sum c_i * r * exp(-nu_i * r^2), R'(0) = sum c_i / norm_i.
+    """
+    if l != 1:
+        return 0.0
+    norms = np.sqrt(analytical_integral(2 * l + 2, 2.0 * nu_array))
+    c_norm = c_vec / norms
+    r_prime_0 = np.sum(c_norm)
+    return r_prime_0**2
+
+
+def get_two_photon_width_pwave(mass_GeV, c_vec, nu_array, sys, e_q, j=0):
+    """
+    Calculates the two-photon decay width for P-wave triplet states (chi_cJ, chi_bJ).
+    Uses the Barbieri-Gatto-Remiddi (1976) formula with |R'(0)|^2.
+    Valid for j=0 (chi_0 -> gamma gamma) and j=2 (chi_2 -> gamma gamma).
+    chi_1 (j=1) is forbidden by Yang's theorem.
+    QCD corrections at O(alpha_s) are not applied — they diverge for P-wave scalar.
+    """
+    if j not in [0, 2]:
+        return 0.0
+
+    R_prime_0_sq = calc_R_prime_origin_sq(c_vec, nu_array, l=1)
+    m_q = sys.m_1  # constituent quark mass
+
+    if j == 0:
+        coeff = 27.0 / 2.0   # chi_0 coefficient (BGR 1976)
+    else:
+        coeff = 18.0 / 5.0   # chi_2 = (4/15) * (27/2)
+
+    width_GeV = coeff * ALPHA_EM**2 * e_q**4 * R_prime_0_sq / m_q**4
+    return width_GeV * 1e6  # keV
+
+
 def get_m1_decay_width(mass_i, mass_f, c_i, nu_i, c_f, nu_f, sys, e_q):
     """
     Calculates the Magnetic Dipole (M1) radiative transition width (e.g., V -> P + gamma).
@@ -271,7 +307,7 @@ def get_e1_decay_width(mass_i, mass_f, c_i, nu_i, c_f, nu_f, sys, e_q):
     for idx_i in range(len(nu_i)):
         for idx_f in range(len(nu_f)):
             nu_sum = nu_i[idx_i] + nu_f[idx_f]
-            I_ij = analytical_integral(4, nu_sum)  # <f|r|i> integral p=4
+            I_ij = analytical_integral(3, nu_sum)  # <f|r|i> = int u_f*u_i dr, p = L_f+L_i+2 = 0+1+2 = 3
             matrix_element += c_norm_i[idx_i] * c_norm_f[idx_f] * I_ij
 
     width_GeV = (4.0 / 9.0) * ALPHA_EM * (e_q**2) * (k**3) * (matrix_element**2)

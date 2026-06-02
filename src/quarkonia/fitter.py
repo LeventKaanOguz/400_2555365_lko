@@ -11,8 +11,8 @@ from .observables import (
 
 
 def residuals(params, m_1, m_2, pdg_data, r):
-    alpha_s, b, c = params
-    sys = QuarkoniumSystem(m_1, m_2, alpha_s, b, c)
+    alpha_s, b, c, sigma = params
+    sys = QuarkoniumSystem(m_1, m_2, alpha_s, b, c, sigma_smear=sigma)
 
     # Solve states for each (L, S) channel (J-dependent terms are perturbative)
     evals_1S_0, _, evecs_1S_0, nu_1S_0 = solve_gem(sys, r, l=0, spin=0)
@@ -261,8 +261,8 @@ def fit_and_save_parameters(
     print(f"Running fitter for {output_csv}... This may take a moment.")
 
     if bounds is None:
-        # Phenomenological limits for [alpha_s, b, c] to prevent unphysical fits
-        bounds = ([0.1, 0.1, -1.0], [0.8, 0.35, 1.0])
+        # Phenomenological limits for [alpha_s, b, c, sigma] to prevent unphysical fits
+        bounds = ([0.1, 0.1, -1.0, 0.3], [0.8, 0.35, 1.0, 5.0])
 
     # Run the least squares optimization
     result = least_squares(
@@ -296,7 +296,7 @@ def fit_and_save_parameters(
     os.makedirs(os.path.dirname(output_csv) or ".", exist_ok=True)
     with open(output_csv, mode="w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["alpha_s", "b", "c", "err_alpha_s", "err_b", "err_c"])
+        writer.writerow(["alpha_s", "b", "c", "sigma", "err_alpha_s", "err_b", "err_c", "err_sigma"])
         writer.writerow(list(optimized_params) + list(perr))
 
     print(f"Parameters successfully fitted and saved to {output_csv}")
@@ -321,11 +321,11 @@ def load_parameters(csv_path="results/fitted_parameters.csv"):
         reader = csv.reader(f)
         next(reader)  # Skip header
         row = next(reader)
-        params = [float(row[0]), float(row[1]), float(row[2])]
+        params = [float(row[0]), float(row[1]), float(row[2]), float(row[3])]
         perr = (
-            [float(row[3]), float(row[4]), float(row[5])]
-            if len(row) > 3
-            else [0.0, 0.0, 0.0]
+            [float(row[4]), float(row[5]), float(row[6]), float(row[7])]
+            if len(row) > 4
+            else [0.0, 0.0, 0.0, 0.0]
         )
         return params, perr
 
@@ -379,4 +379,16 @@ def get_or_fit_parameters(
         )
 
     print(f"Loading cached parameters from {csv_path}")
-    return load_parameters(csv_path)
+    try:
+        return load_parameters(csv_path)
+    except (IndexError, ValueError):
+        print(f"Old 3-parameter format detected in {csv_path}, refitting with sigma...")
+        return fit_and_save_parameters(
+            m_1,
+            m_2,
+            pdg_data,
+            r,
+            initial_guesses,
+            output_csv=csv_path,
+            bounds=bounds,
+        )

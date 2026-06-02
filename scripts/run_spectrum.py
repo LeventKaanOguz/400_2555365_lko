@@ -26,6 +26,7 @@ from quarkonia.decay_models import (
     get_leptonic_width,
     get_leptonic_width_mixed,
     get_two_photon_width,
+    get_two_photon_width_pwave,
     get_3p0_decay_width,
     tune_gamma_3p0,
     get_m1_decay_width,
@@ -41,74 +42,38 @@ def propagate_uncertainty(
     eps = 1e-4
     dm_dp = []
     dobs_dp = []
-    for p_idx in range(3):
-        p_up, p_dn = (
-            [sys_obj.alpha_s, sys_obj.b, sys_obj.c],
-            [sys_obj.alpha_s, sys_obj.b, sys_obj.c],
-        )
+    for p_idx in range(4):
+        p_up = [sys_obj.alpha_s, sys_obj.b, sys_obj.c, sys_obj.sigma_smear]
+        p_dn = [sys_obj.alpha_s, sys_obj.b, sys_obj.c, sys_obj.sigma_smear]
         p_up[p_idx] += eps
         p_dn[p_idx] -= eps
 
         sys_up = QuarkoniumSystem(sys_obj.m_1, sys_obj.m_2, *p_up)
         sys_dn = QuarkoniumSystem(sys_obj.m_1, sys_obj.m_2, *p_dn)
 
-        m_up = get_mass(
-            solve_gem(sys_up, r, l, spin)[0],
-            solve_gem(sys_up, r, l, spin)[2],
-            solve_gem(sys_up, r, l, spin)[3],
-            sys_up,
-            state_idx,
-            spin,
-            l,
-            j,
-        )
-        m_dn = get_mass(
-            solve_gem(sys_dn, r, l, spin)[0],
-            solve_gem(sys_dn, r, l, spin)[2],
-            solve_gem(sys_dn, r, l, spin)[3],
-            sys_dn,
-            state_idx,
-            spin,
-            l,
-            j,
-        )
+        # Solve once per (up/dn) and reuse for all observables
+        ev_up, _, evec_up, nu_up = solve_gem(sys_up, r, l, spin)
+        ev_dn, _, evec_dn, nu_dn = solve_gem(sys_dn, r, l, spin)
+
+        m_up = get_mass(ev_up, evec_up, nu_up, sys_up, state_idx, spin, l, j)
+        m_dn = get_mass(ev_dn, evec_dn, nu_dn, sys_dn, state_idx, spin, l, j)
         dm_dp.append(((m_up - m_dn) / (2 * eps)) * params_err[p_idx])
 
         if obs_type == "leptonic":
-            w_up = get_leptonic_width(
-                m_up,
-                solve_gem(sys_up, r, l, spin)[2][:, state_idx],
-                solve_gem(sys_up, r, l, spin)[3],
-                sys_up,
-                e_q,
-                l=l,
-            )
-            w_dn = get_leptonic_width(
-                m_dn,
-                solve_gem(sys_dn, r, l, spin)[2][:, state_idx],
-                solve_gem(sys_dn, r, l, spin)[3],
-                sys_dn,
-                e_q,
-                l=l,
-            )
+            w_up = get_leptonic_width(m_up, evec_up[:, state_idx], nu_up, sys_up, e_q, l=l)
+            w_dn = get_leptonic_width(m_dn, evec_dn[:, state_idx], nu_dn, sys_dn, e_q, l=l)
             dobs_dp.append(((w_up - w_dn) / (2 * eps)) * params_err[p_idx])
         elif obs_type == "two_photon":
-            w_up = get_two_photon_width(
-                m_up,
-                solve_gem(sys_up, r, l, spin)[2][:, state_idx],
-                solve_gem(sys_up, r, l, spin)[3],
-                sys_up,
-                e_q,
-                l=l,
-            )
-            w_dn = get_two_photon_width(
-                m_dn,
-                solve_gem(sys_dn, r, l, spin)[2][:, state_idx],
-                solve_gem(sys_dn, r, l, spin)[3],
-                sys_dn,
-                e_q,
-                l=l,
-            )
+            w_up = get_two_photon_width(m_up, evec_up[:, state_idx], nu_up, sys_up, e_q, l=l)
+            w_dn = get_two_photon_width(m_dn, evec_dn[:, state_idx], nu_dn, sys_dn, e_q, l=l)
+            dobs_dp.append(((w_up - w_dn) / (2 * eps)) * params_err[p_idx])
+        elif obs_type == "rms_radius":
+            r_up = calc_rms_radius(evec_up[:, state_idx], nu_up, l=l)
+            r_dn = calc_rms_radius(evec_dn[:, state_idx], nu_dn, l=l)
+            dobs_dp.append(((r_up - r_dn) / (2 * eps)) * params_err[p_idx])
+        elif obs_type == "two_photon_pwave":
+            w_up = get_two_photon_width_pwave(m_up, evec_up[:, state_idx], nu_up, sys_up, e_q, j=j)
+            w_dn = get_two_photon_width_pwave(m_dn, evec_dn[:, state_idx], nu_dn, sys_dn, e_q, j=j)
             dobs_dp.append(((w_up - w_dn) / (2 * eps)) * params_err[p_idx])
 
     return np.sqrt(np.sum(np.array(dm_dp) ** 2)), (
@@ -155,13 +120,13 @@ def propagate_transition_uncertainty(
     if decay_type in ["M1", "E1"]:
         l_f, spin_f, idx_f, j_f = parse_state_name(state_f_name)
 
-    for p_idx in range(3):
+    for p_idx in range(4):
         if params_err[p_idx] == 0.0:
             dobs_dp.append(0.0)
             continue
 
-        p_up = [sys_obj.alpha_s, sys_obj.b, sys_obj.c]
-        p_dn = [sys_obj.alpha_s, sys_obj.b, sys_obj.c]
+        p_up = [sys_obj.alpha_s, sys_obj.b, sys_obj.c, sys_obj.sigma_smear]
+        p_dn = [sys_obj.alpha_s, sys_obj.b, sys_obj.c, sys_obj.sigma_smear]
 
         p_up[p_idx] += eps
         p_dn[p_idx] -= eps
@@ -390,10 +355,16 @@ def generate_spectrum(
 
                     # RMS Radius Calculation
                     rms_rad = calc_rms_radius(evecs[:, state_idx], nu_array, l=l)
+                    rms_err = 0.0
+                    if params_err is not None and sum(params_err) > 0:
+                        _, rms_err = propagate_uncertainty(
+                            sys_obj, r, params_err, state_idx, spin, l, j, e_q,
+                            "rms_radius",
+                        )
                     calculated_observables[name + "_rms"] = (
                         "RMS Radius (GeV^-1)",
                         rms_rad,
-                        0.0,
+                        rms_err,
                     )
                     # --- Compute Decay Observables ---
                     if e_q != 0.0:
@@ -450,6 +421,27 @@ def generate_spectrum(
                                 "Two-Photon Width (γγ)",
                                 width_gg,
                                 obs_err,
+                            )
+                        # P-wave chi_J -> gamma gamma (J=0 and J=2 only; J=1 forbidden by Yang)
+                        if spin == 1 and l == 1 and j in [0, 2]:
+                            width_gg_p = get_two_photon_width_pwave(
+                                mass,
+                                evecs[:, state_idx],
+                                nu_array,
+                                sys_obj,
+                                e_q,
+                                j=j,
+                            )
+                            gg_p_err = 0.0
+                            if params_err is not None and sum(params_err) > 0:
+                                _, gg_p_err = propagate_uncertainty(
+                                    sys_obj, r, params_err, state_idx, spin, l, j,
+                                    e_q, "two_photon_pwave",
+                                )
+                            calculated_observables[name + "_gg"] = (
+                                "Two-Photon Width (γγ)",
+                                width_gg_p,
+                                gg_p_err,
                             )
 
     # Apply S-D mixing for the 2^3S_1 and 1^3D_1 states
@@ -532,35 +524,36 @@ if __name__ == "__main__":
         os.path.join(os.path.dirname(__file__), "..", "results")
     )
 
-    # We need to get bb and cc alpha_s first to do the B_c interpolation
-    (cc_alpha_s, _, _), _ = get_or_fit_parameters(
-        1.500,
-        1.500,
-        all_pdg.get("cc", {}),
-        r,
-        [0.400, 0.183, -0.250],
-        os.path.join(results_dir, "cc_params.csv"),
-    )
-    (bb_alpha_s, _, _), _ = get_or_fit_parameters(
-        4.730,
-        4.730,
-        all_pdg.get("bb", {}),
-        r,
-        [0.350, 0.193, 0.030],
-        os.path.join(results_dir, "bb_params.csv"),
-    )
-
-    # QFT Logarithmic Interpolation of alpha_s based on reduced mass scale
+    # Reduced masses for interpolation (defined before pre-fit calls)
     mu_cc = 1.500 / 2.0
     mu_bb = 4.730 / 2.0
     mu_bc = (4.730 * 1.500) / (4.730 + 1.500)
 
+    # We need to get bb and cc alpha_s and sigma first to do the B_c interpolation
+    (cc_alpha_s, _, _, cc_sigma), _ = get_or_fit_parameters(
+        1.500,
+        1.500,
+        all_pdg.get("cc", {}),
+        r,
+        [0.400, 0.183, -0.250, 1.09],
+        os.path.join(results_dir, "cc_params.csv"),
+    )
+    (bb_alpha_s, _, _, bb_sigma), _ = get_or_fit_parameters(
+        4.730,
+        4.730,
+        all_pdg.get("bb", {}),
+        r,
+        [0.350, 0.193, 0.030, 1.34],
+        os.path.join(results_dir, "bb_params.csv"),
+    )
+
+    # QFT Logarithmic Interpolation of alpha_s and linear interpolation of sigma
+    x_bc = np.log(mu_bc / mu_cc) / np.log(mu_bb / mu_cc)
     inv_alpha_cc = 1.0 / cc_alpha_s
     inv_alpha_bb = 1.0 / bb_alpha_s
-    inv_alpha_bc = inv_alpha_cc + (np.log(mu_bc / mu_cc) / np.log(mu_bb / mu_cc)) * (
-        inv_alpha_bb - inv_alpha_cc
-    )
+    inv_alpha_bc = inv_alpha_cc + x_bc * (inv_alpha_bb - inv_alpha_cc)
     bc_alpha_s_qft = 1.0 / inv_alpha_bc
+    bc_sigma_qft = cc_sigma + x_bc * (bb_sigma - cc_sigma)
 
     m_u = 0.330  # Constituent light quark mass in GeV
     cu_names = {"1S": "D", "3S": "D^*"}
@@ -573,7 +566,7 @@ if __name__ == "__main__":
             "m_2": 4.730,
             "pdg_data": all_pdg.get("bb", {}),
             "names": bb_names,
-            "initial_guesses": [0.350, 0.193, 0.030],
+            "initial_guesses": [0.350, 0.193, 0.030, 1.34],
             "bounds": None,
             "max_n": 3,
             "max_l": 2,
@@ -585,7 +578,7 @@ if __name__ == "__main__":
             "m_2": 1.500,
             "pdg_data": all_pdg.get("cc", {}),
             "names": cc_names,
-            "initial_guesses": [0.400, 0.183, -0.250],
+            "initial_guesses": [0.400, 0.183, -0.250, 1.09],
             "bounds": None,
             "max_n": 3,
             "max_l": 2,
@@ -597,10 +590,10 @@ if __name__ == "__main__":
             "m_2": 1.500,
             "pdg_data": all_pdg.get("bc", {}),
             "names": bc_names,
-            "initial_guesses": [bc_alpha_s_qft, 0.183, -0.090],
+            "initial_guesses": [bc_alpha_s_qft, 0.183, -0.090, bc_sigma_qft],
             "bounds": (
-                [bc_alpha_s_qft - 1e-5, 0.1, -1.0],
-                [bc_alpha_s_qft + 1e-5, 0.35, 1.0],
+                [bc_alpha_s_qft - 1e-5, 0.1, -1.0, bc_sigma_qft - 1e-5],
+                [bc_alpha_s_qft + 1e-5, 0.35, 1.0, bc_sigma_qft + 1e-5],
             ),
             "max_n": 3,
             "max_l": 2,
@@ -612,8 +605,8 @@ if __name__ == "__main__":
             "m_2": m_u,
             "pdg_data": {"(1^1S)": 1.864},
             "names": cu_names,
-            "initial_guesses": [0.500, 0.180, -0.400],
-            "bounds": ([0.2, 0.1, -1.0], [0.8, 0.3, 1.0]),
+            "initial_guesses": [0.500, 0.180, -0.400, 0.85],
+            "bounds": ([0.2, 0.1, -1.0, 0.3], [0.8, 0.3, 1.0, 2.5]),
             "max_n": 1,
             "max_l": 0,
         },
@@ -623,7 +616,7 @@ if __name__ == "__main__":
 
     for config in sectors_config:
         print(f"\n--- Fitting/Loading {config['name']} Parameters ---")
-        (alpha_s, b, c), errs = get_or_fit_parameters(
+        (alpha_s, b, c, sigma), errs = get_or_fit_parameters(
             m_1=config["m_1"],
             m_2=config["m_2"],
             pdg_data=config["pdg_data"],
@@ -633,7 +626,8 @@ if __name__ == "__main__":
             bounds=config["bounds"],
         )
         sys_obj = QuarkoniumSystem(
-            m_1=config["m_1"], m_2=config["m_2"], alpha_s=alpha_s, b=b, c=c
+            m_1=config["m_1"], m_2=config["m_2"], alpha_s=alpha_s, b=b, c=c,
+            sigma_smear=sigma,
         )
         masses, evecs, nu = generate_spectrum(
             sys_obj,
