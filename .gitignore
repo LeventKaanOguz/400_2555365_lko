@@ -208,3 +208,6 @@ __marimo__/
 
 # Claude Code
 .claude/
+
+# Discussion notes
+*.disc.md
