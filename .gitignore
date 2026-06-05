@@ -211,3 +211,12 @@ __marimo__/
 
 # Discussion notes
 *.disc.md
+
+# --- Project-specific -------------------------------------------------------
+# Regenerated analysis output. The committed deliverable is REPORT.md (derived
+# from these); the CSVs themselves are rebuilt by scripts/run_spectrum.py.
+results/
+
+# Superseded / oversized PDG dumps. The active data/pdg-*.sqlite stays tracked
+# so the pipeline is runnable on a fresh clone; the old "all" dump does not.
+data/pdgall*.sqlite
