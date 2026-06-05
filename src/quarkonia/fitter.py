@@ -276,13 +276,28 @@ def fit_and_save_parameters(
 
     optimized_params = result.x
 
+    # --- Goodness-of-fit (chi^2) of the optimisation step ---------------------
+    # result.fun holds the weighted residuals  w_i (m_calc - m_exp) * 1000  in MeV.
+    # The minimised objective is the (robust soft_l1) chi-square; we report the
+    # plain weighted chi^2 = sum_i residual_i^2 together with the reduced value.
+    residual_vec = np.asarray(result.fun)
+    n_data = len(residual_vec)
+    n_par = len(result.x)
+    dof = n_data - n_par
+    chi2_fit = float(np.sum(residual_vec**2))
+    chi2_per_dof = chi2_fit / dof if dof > 0 else float("nan")
+    print(
+        f"  Fit chi^2 (weighted, MeV^2) = {chi2_fit:.2f}  |  "
+        f"N_data = {n_data}, N_par = {n_par}, dof = {dof}  |  "
+        f"chi^2/dof = {chi2_per_dof:.3f}"
+    )
+
     # Calculate covariance and parameter errors using the Jacobian
     try:
         U, s, Vh = np.linalg.svd(result.jac, full_matrices=False)
         tol = np.finfo(float).eps * s[0] * max(result.jac.shape)
         w = s > tol
         cov = (Vh[w].T / s[w] ** 2) @ Vh[w]
-        dof = len(result.fun) - len(result.x)
         if dof > 0:
             s_sq = 2 * result.cost / dof
             cov *= s_sq
@@ -296,8 +311,13 @@ def fit_and_save_parameters(
     os.makedirs(os.path.dirname(output_csv) or ".", exist_ok=True)
     with open(output_csv, mode="w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["alpha_s", "b", "c", "sigma", "err_alpha_s", "err_b", "err_c", "err_sigma"])
-        writer.writerow(list(optimized_params) + list(perr))
+        writer.writerow(
+            ["alpha_s", "b", "c", "sigma", "err_alpha_s", "err_b", "err_c",
+             "err_sigma", "chi2_fit", "dof", "chi2_per_dof"]
+        )
+        writer.writerow(
+            list(optimized_params) + list(perr) + [chi2_fit, dof, chi2_per_dof]
+        )
 
     print(f"Parameters successfully fitted and saved to {output_csv}")
     return optimized_params, perr

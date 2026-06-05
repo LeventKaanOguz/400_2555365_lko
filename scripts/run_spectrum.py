@@ -245,6 +245,7 @@ def generate_spectrum(
     params_err=None,
     max_n=3,
     max_l=2,
+    n_fit_params=4,
 ):
     """
     Dynamically generates the full spectroscopic multiplet n^(2S+1)L_J
@@ -295,7 +296,9 @@ def generate_spectrum(
                 export_gem_parameters(nu_array, evecs, l_chars[l], sector_name)
                 if l == 0:
                     virial_ratio = (
-                        check_virial_theorem(evecs[:, 0], nu_array, sys_obj, l=0)
+                        check_virial_theorem(
+                            evecs[:, 0], nu_array, sys_obj, l=0, spin=spin
+                        )
                         if len(evals) > 0
                         else 0.0
                     )
@@ -471,7 +474,9 @@ def generate_spectrum(
             calculated_observables[name_2S] = ("Leptonic Width (e+e-)", w_2S, calculated_observables[name_2S][2])
             calculated_observables[name_1D] = ("Leptonic Width (e+e-)", w_1D, calculated_observables[name_1D][2])
 
-    format_and_evaluate(calculated_masses, pdg_data, sector_name)
+    gof = format_and_evaluate(
+        calculated_masses, pdg_data, sector_name, n_fit_params=n_fit_params
+    )
 
     if calculated_observables:
         print(f"\n--- Decay Observables for {sector_name} ---")
@@ -480,7 +485,7 @@ def generate_spectrum(
 
         export_observables(calculated_observables, sector_name)
 
-    return calculated_masses, calculated_evecs, nu_array
+    return calculated_masses, calculated_evecs, nu_array, gof
 
 
 if __name__ == "__main__":
@@ -530,7 +535,7 @@ if __name__ == "__main__":
     mu_bc = (4.730 * 1.500) / (4.730 + 1.500)
 
     # We need to get bb and cc alpha_s and sigma first to do the B_c interpolation
-    (cc_alpha_s, _, _, cc_sigma), _ = get_or_fit_parameters(
+    (cc_alpha_s, _, _, cc_sigma), cc_errs = get_or_fit_parameters(
         1.500,
         1.500,
         all_pdg.get("cc", {}),
@@ -538,7 +543,7 @@ if __name__ == "__main__":
         [0.400, 0.183, -0.250, 1.09],
         os.path.join(results_dir, "cc_params.csv"),
     )
-    (bb_alpha_s, _, _, bb_sigma), _ = get_or_fit_parameters(
+    (bb_alpha_s, _, _, bb_sigma), bb_errs = get_or_fit_parameters(
         4.730,
         4.730,
         all_pdg.get("bb", {}),
@@ -555,6 +560,29 @@ if __name__ == "__main__":
     bc_alpha_s_qft = 1.0 / inv_alpha_bc
     bc_sigma_qft = cc_sigma + x_bc * (bb_sigma - cc_sigma)
 
+    # --- Propagate the cc/bb fit uncertainties into the interpolated B_c inputs.
+    # alpha_s is NOT fitted freely for B_c (it is fixed by the log-interpolation
+    # of 1/alpha_s in the reduced-mass scale), so its uncertainty is inherited
+    # entirely from the charm and bottom sectors. Likewise for the smearing sigma.
+    err_cc_alpha, err_bb_alpha = cc_errs[0], bb_errs[0]
+    err_cc_sigma, err_bb_sigma = cc_errs[3], bb_errs[3]
+
+    # d(alpha_bc)/d(alpha_cc) and d(alpha_bc)/d(alpha_bb) from
+    # 1/alpha_bc = (1-x)/alpha_cc + x/alpha_bb
+    d_bc_d_cc = (1.0 - x_bc) / (inv_alpha_bc**2 * cc_alpha_s**2)
+    d_bc_d_bb = x_bc / (inv_alpha_bc**2 * bb_alpha_s**2)
+    err_bc_alpha = np.hypot(d_bc_d_cc * err_cc_alpha, d_bc_d_bb * err_bb_alpha)
+    # sigma_bc = (1-x) sigma_cc + x sigma_bb  (linear interpolation)
+    err_bc_sigma = np.hypot((1.0 - x_bc) * err_cc_sigma, x_bc * err_bb_sigma)
+    # [err_alpha_s, err_b, err_c, err_sigma]; b and c are exactly determined by
+    # the 2 B_c data points (dof = 0), so their fit covariance is unavailable and
+    # the interpolated coupling dominates the predicted B_c uncertainties.
+    bc_param_errs = [err_bc_alpha, 0.0, 0.0, err_bc_sigma]
+    print(
+        f"\nInterpolated B_c inputs: alpha_s = {bc_alpha_s_qft:.4f} ± {err_bc_alpha:.4f}, "
+        f"sigma = {bc_sigma_qft:.4f} ± {err_bc_sigma:.4f}  (inherited from cc/bb fits)"
+    )
+
     m_u = 0.330  # Constituent light quark mass in GeV
     cu_names = {"1S": "D", "3S": "D^*"}
 
@@ -570,6 +598,7 @@ if __name__ == "__main__":
             "bounds": None,
             "max_n": 3,
             "max_l": 2,
+            "n_fit_params": 4,  # alpha_s, b, c, sigma all free
         },
         {
             "id": "cc",
@@ -582,6 +611,7 @@ if __name__ == "__main__":
             "bounds": None,
             "max_n": 3,
             "max_l": 2,
+            "n_fit_params": 4,  # alpha_s, b, c, sigma all free
         },
         {
             "id": "bc",
@@ -597,6 +627,10 @@ if __name__ == "__main__":
             ),
             "max_n": 3,
             "max_l": 2,
+            # alpha_s and sigma are frozen to the interpolated values, so only
+            # b and c are genuinely free degrees of freedom for the B_c fit.
+            "n_fit_params": 2,
+            "override_errs": bc_param_errs,
         },
         {
             "id": "cu",
@@ -609,10 +643,13 @@ if __name__ == "__main__":
             "bounds": ([0.2, 0.1, -1.0, 0.3], [0.8, 0.3, 1.0, 2.5]),
             "max_n": 1,
             "max_l": 0,
+            # single anchor mass (D), the 4 parameters are under-determined
+            "n_fit_params": 4,
         },
     ]
 
     results_dict = {}
+    gof_summary = []
 
     for config in sectors_config:
         print(f"\n--- Fitting/Loading {config['name']} Parameters ---")
@@ -625,11 +662,16 @@ if __name__ == "__main__":
             csv_path=os.path.join(results_dir, f"{config['id']}_params.csv"),
             bounds=config["bounds"],
         )
+        # For sectors with frozen/under-determined parameters, substitute the
+        # externally propagated uncertainties (e.g. B_c inherits the interpolated
+        # alpha_s/sigma errors from the cc and bb fits).
+        if config.get("override_errs") is not None:
+            errs = list(config["override_errs"])
         sys_obj = QuarkoniumSystem(
             m_1=config["m_1"], m_2=config["m_2"], alpha_s=alpha_s, b=b, c=c,
             sigma_smear=sigma,
         )
-        masses, evecs, nu = generate_spectrum(
+        masses, evecs, nu, gof = generate_spectrum(
             sys_obj,
             r,
             config["pdg_data"],
@@ -638,7 +680,10 @@ if __name__ == "__main__":
             params_err=errs,
             max_n=config["max_n"],
             max_l=config["max_l"],
+            n_fit_params=config["n_fit_params"],
         )
+        gof["sector_id"] = config["id"]
+        gof_summary.append(gof)
         results_dict[config["id"]] = {
             "masses": masses,
             "evecs": evecs,
@@ -839,5 +884,40 @@ if __name__ == "__main__":
         print(f"\nExported radiative transitions to {rad_csv_path}")
 
     print("=" * 80 + "\n")
+
+    # =========================================================================
+    # GLOBAL GOODNESS-OF-FIT SUMMARY (chi^2 per sector)
+    # =========================================================================
+    print("=" * 80)
+    print("--- Global Goodness-of-Fit Summary (mass spectrum) ---")
+    print(
+        f"{'Sector':<22} | {'N':<4} | {'chi^2':<10} | {'dof':<5} | {'chi^2/dof':<10} | {'RMS [MeV]':<10}"
+    )
+    print("-" * 80)
+    total_chi2 = 0.0
+    total_n = 0
+    total_par = 0
+    for gof in gof_summary:
+        total_chi2 += gof["chi2"]
+        total_n += gof["n"]
+        total_par += gof["n"] - gof["dof"]
+        print(
+            f"{gof['sector']:<22} | {gof['n']:<4} | {gof['chi2']:<10.2f} | "
+            f"{gof['dof']:<5} | {gof['chi2_per_dof']:<10.3f} | {gof['rms_mev']:<10.2f}"
+        )
+    global_dof = max(total_n - total_par, 1)
+    print("-" * 80)
+    print(
+        f"{'GLOBAL':<22} | {total_n:<4} | {total_chi2:<10.2f} | "
+        f"{total_n - total_par:<5} | {total_chi2 / global_dof:<10.3f} |"
+    )
+    print("=" * 80 + "\n")
+
+    gof_df = pd.DataFrame(gof_summary)[
+        ["sector_id", "sector", "n", "chi2", "dof", "chi2_per_dof", "rms_mev"]
+    ]
+    gof_csv_path = os.path.join(results_dir, "goodness_of_fit.csv")
+    gof_df.to_csv(gof_csv_path, index=False)
+    print(f"Goodness-of-fit summary saved to {gof_csv_path}\n")
 
     generate_consolidated_report()

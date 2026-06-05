@@ -69,9 +69,23 @@ The computation flows through these stages:
 
 | File | Contents |
 |------|----------|
-| `<sector>_params.csv` | Cached Cornell potential parameters `[alpha_s, b, c]` with errors |
-| `<sector>_observables.csv` | Leptonic/two-photon widths per state |
-| `<sector>_errors.csv` | Mass comparison vs PDG per state |
+| `<sector>_params.csv` | Cached Cornell parameters `[alpha_s, b, c, sigma]` with errors plus the fit `chi2_fit, dof, chi2_per_dof` |
+| `<sector>_observables.csv` | Leptonic/two-photon widths per state, with propagated `Error_keV` |
+| `<sector>_errors.csv` | Mass comparison vs PDG per state, including propagated `Mass_Err_GeV` and the `Pull_sigma` |
 | `<sector>_<Wave>_GEM_Coefficients.csv` | Raw Gaussian basis coefficients |
-| `consolidated_error_report.csv` | Global accuracy summary across all sectors |
+| `consolidated_error_report.csv` | Global accuracy summary (masses + widths) with `Uncertainty`, `Pull_sigma`, `Chi2_contrib` |
+| `goodness_of_fit.csv` | Per-sector and global `chi^2`, `dof`, `chi^2/dof`, RMS mass deviation |
 | `radiative_decays.csv` | E1/M1 transition widths |
+
+### Uncertainties and chi-square
+
+Every observable carries a propagated 1-sigma uncertainty obtained by finite-difference
+propagation of the fitted Cornell parameter covariance (`propagate_uncertainty` /
+`propagate_transition_uncertainty` in `run_spectrum.py`). The B_c sector does not fit
+`alpha_s`/`sigma` freely — they are interpolated from the cc/bb fits, so their
+uncertainties are inherited via error propagation of the log-interpolation. A chi-square
+(`chi^2 = sum_i [(calc_i - exp_i)/sigma_i]^2`) is reported at the fit step (`fitter.py`)
+and at the comparison step for every sector (`metrics.format_and_evaluate`), with a global
+summary at the end of `run_spectrum.py`. The virial diagnostic
+(`observables.check_virial_theorem`) now includes the hyperfine term and returns 1.0 for a
+converged basis (pass `spin` for S-waves).

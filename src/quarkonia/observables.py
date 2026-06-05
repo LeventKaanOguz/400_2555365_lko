@@ -114,59 +114,80 @@ def calc_tensor_mixing_exact(c_vec_l0, nu_array_l0, c_vec_l2, nu_array_l2, sys, 
     return mixing_element * s12_mixing
 
 
-def check_virial_theorem(c_vec, nu_array, sys, l):
+def check_virial_theorem(c_vec, nu_array, sys, l, spin=None):
     """
-    Calculates the Virial ratio: 2 <T> / < (4 * alpha_s / 3r) + b * r >
-    If the basis is complete and well-optimized, this ratio must be identically 1.0.
+    Calculates the quantum Virial ratio  2<T> / <r dV/dr>.
+
+    For a bound eigenstate the virial theorem  2<T> = <r dV/dr>  holds exactly,
+    so a converged variational basis must return 1.0. The full Cornell-plus-
+    hyperfine potential is used:
+
+        V(r)      = -(4/3) alpha_s / r + b r + c + V_hf(r)
+        r dV/dr   =  (4/3) alpha_s / r + b r + r dV_hf/dr
+
+    with the Gaussian-smeared contact hyperfine term
+    V_hf(r) = K exp(-sigma^2 r^2),  r dV_hf/dr = -2 sigma^2 r^2 K exp(-sigma^2 r^2).
+
+    The constant ``c`` does not contribute (dc/dr = 0). Earlier versions omitted
+    the hyperfine piece, which made the ratio spuriously deviate from 1 (e.g.
+    ~1.2 for the strongly-smeared singlet S-wave) even when the basis was fully
+    converged. Passing ``spin`` restores the correct, physically complete check.
 
     Parameters
     ----------
     c_vec : numpy.ndarray
-        Eigenvector coefficients.
+        Eigenvector coefficients (un-normalized GEM coefficients).
     nu_array : numpy.ndarray
         Gaussian basis widths.
     sys : QuarkoniumSystem
         Quarkonium system representation object.
     l : int
         Orbital angular momentum quantum number.
+    spin : int or None, optional
+        Total quark spin (0 or 1). Required to include the hyperfine term for
+        S-waves; if None the hyperfine contribution is omitted (Coulomb+linear
+        only), matching the legacy behaviour.
 
     Returns
     -------
     float
-        The computed virial ratio.
+        The computed virial ratio (1.0 for a fully converged eigenstate).
     """
-    t_exp = 0.0
-    v_coulomb_exp = 0.0
-    v_linear_exp = 0.0
+    norms = np.sqrt(analytical_integral(2 * l + 2, 2.0 * nu_array))
+    c_norm = c_vec / norms
+    nu_ij = nu_array[:, np.newaxis] + nu_array[np.newaxis, :]
 
-    for i in range(len(nu_array)):
-        norm_i = np.sqrt(analytical_integral(2 * l + 2, 2.0 * nu_array[i]))
-        for k in range(len(nu_array)):
-            norm_k = np.sqrt(analytical_integral(2 * l + 2, 2.0 * nu_array[k]))
-            nu_ik = nu_array[i] + nu_array[k]
+    # Kinetic energy  <T>  via the exact first-derivative expansion
+    term1 = (l + 1.0) ** 2 * analytical_integral(2 * l, nu_ij)
+    term2 = -2.0 * (l + 1.0) * nu_ij * analytical_integral(2 * l + 2, nu_ij)
+    term3 = (
+        4.0
+        * nu_array[:, np.newaxis]
+        * nu_array[np.newaxis, :]
+        * analytical_integral(2 * l + 4, nu_ij)
+    )
+    T = (sys.hbar**2 / (2.0 * sys.mu)) * (term1 + term2 + term3)
+    t_exp = c_norm @ T @ c_norm
 
-            c_i = c_vec[i] / norm_i
-            c_k = c_vec[k] / norm_k
+    # <r dV/dr> for the Coulomb + linear Cornell potential
+    rdv_coulomb = (4.0 / 3.0) * sys.alpha_s * analytical_integral(2 * l + 1, nu_ij)
+    rdv_linear = sys.b * analytical_integral(2 * l + 3, nu_ij)
+    rdv = c_norm @ (rdv_coulomb + rdv_linear) @ c_norm
 
-            # Kinetic Energy
-            term1 = (l + 1.0) ** 2 * analytical_integral(2 * l, nu_ik)
-            term2 = -2.0 * (l + 1.0) * nu_ik * analytical_integral(2 * l + 2, nu_ik)
-            term3 = (
-                4.0 * nu_array[i] * nu_array[k] * analytical_integral(2 * l + 4, nu_ik)
-            )
-            t_ij = (sys.hbar**2 / (2.0 * sys.mu)) * (term1 + term2 + term3)
+    # Hyperfine contribution to <r dV/dr> (S-waves only, requires spin)
+    if spin is not None and l == 0:
+        spin_dot = -0.75 if spin == 0 else 0.25
+        hf_coeff = (
+            (32.0 * np.pi * sys.alpha_s)
+            / (9.0 * sys.m_1 * sys.m_2)
+            * (sys.sigma_smear / np.sqrt(np.pi)) ** 3
+        )
+        k_hf = hf_coeff * spin_dot
+        s2 = sys.sigma_smear**2
+        rdv_hf = -2.0 * s2 * k_hf * analytical_integral(2 * l + 4, nu_ij + s2)
+        rdv += c_norm @ rdv_hf @ c_norm
 
-            t_exp += c_i * c_k * t_ij
-
-            v_coulomb_ij = (
-                (4.0 / 3.0) * sys.alpha_s * analytical_integral(2 * l + 1, nu_ik)
-            )
-            v_linear_ij = sys.b * analytical_integral(2 * l + 3, nu_ik)
-
-            v_coulomb_exp += c_i * c_k * v_coulomb_ij
-            v_linear_exp += c_i * c_k * v_linear_ij
-
-    return 2.0 * t_exp / (v_coulomb_exp + v_linear_exp)
+    return 2.0 * t_exp / rdv
 
 
 def get_wfo_exact(c_i, nu_array, r_array):

@@ -5,14 +5,45 @@ import pandas as pd
 import numpy as np
 
 
-def format_and_evaluate(calculated_states, pdg_data, sector_name):
+def format_and_evaluate(calculated_states, pdg_data, sector_name, n_fit_params=4):
+    """
+    Tabulates calculated vs experimental masses and reports goodness-of-fit.
+
+    In addition to the per-state absolute/percentage errors, this computes a
+    chi-square statistic for the sector:
+
+        chi^2 = sum_i [ (m_calc,i - m_exp,i) / sigma_i ]^2
+
+    where sigma_i is the propagated mass uncertainty (from the fitted-parameter
+    covariance, in MeV) combined in quadrature with a 1 MeV experimental/rounding
+    floor so the statistic stays finite when no parameter uncertainty is
+    available. The reduced chi^2 uses dof = N_states - n_fit_params. A converged
+    fit with realistic uncertainties should give chi^2/dof of order 1.
+
+    Parameters
+    ----------
+    calculated_states : dict
+        Maps state name -> (mass_GeV, mass_err_GeV) or bare mass_GeV.
+    pdg_data : dict
+        Experimental PDG mass data keyed by the bare state label.
+    sector_name : str
+        Sector designation, used for the output CSV filename.
+    n_fit_params : int, optional
+        Number of free fit parameters, used for the degrees of freedom in the
+        reduced chi-square, by default 4 (alpha_s, b, c, sigma).
+    """
     print(f"\n--- Error Analysis vs Experimental Data ({sector_name}) ---")
     print(
-        f"{'State':<18} | {'Calculated [GeV]':<25} | {'Experimental [GeV]':<18} | {'Abs Error [MeV]':<15} | {'% Error':<10} | {'MSE [MeV^2]':<15}"
+        f"{'State':<18} | {'Calculated [GeV]':<25} | {'Experimental [GeV]':<18} | {'Abs Error [MeV]':<15} | {'% Error':<10} | {'Pull (sigma)':<12} | {'MSE [MeV^2]':<15}"
     )
-    print("-" * 115)
+    print("-" * 130)
+
+    SIGMA_FLOOR_MEV = 1.0  # experimental/rounding floor to keep chi^2 finite
 
     results = []
+    chi2 = 0.0
+    sq_err_sum = 0.0
+    n_compared = 0
     for state, calc_data in calculated_states.items():
         if isinstance(calc_data, tuple):
             calc_mass, mass_err = calc_data
@@ -28,17 +59,37 @@ def format_and_evaluate(calculated_states, pdg_data, sector_name):
             abs_err = (calc_mass - exp_mass) * 1000.0
             pct_err = abs(calc_mass - exp_mass) / exp_mass * 100.0
             mse = abs_err**2
+            sigma_mev = np.hypot(mass_err * 1000.0, SIGMA_FLOOR_MEV)
+            pull = abs_err / sigma_mev
+            chi2 += pull**2
+            sq_err_sum += mse
+            n_compared += 1
             print(
-                f"{state:<18} | {calc_str:<25} | {exp_mass:<18.4f} | {abs_err:<15.1f} | {pct_err:<10.3f} | {mse:<15.2f}"
+                f"{state:<18} | {calc_str:<25} | {exp_mass:<18.4f} | {abs_err:<15.1f} | {pct_err:<10.3f} | {pull:<12.2f} | {mse:<15.2f}"
             )
             results.append(
-                [state, calc_mass, mass_err, exp_mass, abs_err, pct_err, mse]
+                [state, calc_mass, mass_err, exp_mass, abs_err, pct_err, pull, mse]
             )
         else:
             print(
-                f"{state:<18} | {calc_str:<25} | {'-':<18} | {'-':<15} | {'-':<10} | {'-':<15}"
+                f"{state:<18} | {calc_str:<25} | {'-':<18} | {'-':<15} | {'-':<10} | {'-':<12} | {'-':<15}"
             )
-            results.append([state, calc_mass, mass_err, "N/A", "N/A", "N/A", "N/A"])
+            results.append(
+                [state, calc_mass, mass_err, "N/A", "N/A", "N/A", "N/A", "N/A"]
+            )
+
+    dof = max(n_compared - n_fit_params, 1)
+    rmse = np.sqrt(sq_err_sum / n_compared) if n_compared else 0.0
+    red_chi2 = chi2 / dof
+    print("-" * 130)
+    print(
+        f"Goodness of fit ({sector_name}): N = {n_compared} states, "
+        f"dof = {n_compared} - {n_fit_params} = {n_compared - n_fit_params}"
+    )
+    print(
+        f"   chi^2 = {chi2:.2f}   chi^2/dof = {red_chi2:.3f}   "
+        f"RMS mass deviation = {rmse:.2f} MeV"
+    )
 
     out_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "results")
@@ -54,11 +105,21 @@ def format_and_evaluate(calculated_states, pdg_data, sector_name):
                     "Exp_GeV",
                     "Abs_Err_MeV",
                     "Pct_Err",
+                    "Pull_sigma",
                     "MSE_MeV2",
                 ]
             ]
             + results
         )
+
+    return {
+        "sector": sector_name,
+        "chi2": chi2,
+        "dof": n_compared - n_fit_params,
+        "chi2_per_dof": red_chi2,
+        "rms_mev": rmse,
+        "n": n_compared,
+    }
 
 
 def export_gem_parameters(nu_array, evecs, l_str, sector_name):
@@ -138,6 +199,7 @@ def generate_consolidated_report():
     ]
 
     report_data = []
+    SIGMA_FLOOR = 1e-9  # avoid division by zero for the dimensionless pull
 
     # Process Masses
     for sector_id, sector_name in sectors:
@@ -152,6 +214,9 @@ def generate_consolidated_report():
                 abs_err_mev = float(row["Abs_Err_MeV"])
                 pct_err = float(row["Pct_Err"])
                 mse = float(row["MSE_MeV2"])
+                # Propagated 1-sigma uncertainty (MeV) and the pull (chi contribution)
+                unc_mev = float(row.get("Mass_Err_GeV", 0.0)) * 1000.0
+                pull = abs_err_mev / np.hypot(unc_mev, 1.0)  # 1 MeV exp/round floor
 
                 report_data.append(
                     {
@@ -160,8 +225,11 @@ def generate_consolidated_report():
                         "State": state,
                         "Calculated": calc_val,
                         "Experimental": exp_val,
+                        "Uncertainty": unc_mev,
                         "Absolute_Error": abs_err_mev,
                         "Percentage_Error": pct_err,
+                        "Pull_sigma": pull,
+                        "Chi2_contrib": pull**2,
                         "MSE": mse,
                     }
                 )
@@ -174,6 +242,7 @@ def generate_consolidated_report():
                 state_label = state_full.split()[0]
                 obs_type = row["Observable_Type"]
                 calc_val = float(row["Value_keV"])
+                obs_unc = float(row.get("Error_keV", 0.0))
 
                 exp_val = None
                 if "e+e-" in obs_type:
@@ -187,6 +256,8 @@ def generate_consolidated_report():
                     abs_err = abs(calc_val - exp_val)
                     pct_err = (abs_err / exp_val) * 100.0
                     mse = abs_err**2
+                    # Pull uses the propagated width uncertainty (keV) with a small floor
+                    pull = abs_err / max(obs_unc, SIGMA_FLOOR)
 
                     report_data.append(
                         {
@@ -195,8 +266,11 @@ def generate_consolidated_report():
                             "State": state_full,
                             "Calculated": calc_val,
                             "Experimental": exp_val,
+                            "Uncertainty": obs_unc,
                             "Absolute_Error": abs_err,
                             "Percentage_Error": pct_err,
+                            "Pull_sigma": pull,
+                            "Chi2_contrib": pull**2,
                             "MSE": mse,
                         }
                     )
