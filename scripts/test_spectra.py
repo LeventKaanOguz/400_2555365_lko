@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 
 import os
+import sys
 import pandas as pd
 import numpy as np
-import json
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+from quarkonia.pdg_loader import load_pdg_data
+from quarkonia import paths
 
 
 def evaluate_decay_error(calculated_width, state_label, sector, decay_type):
@@ -13,11 +17,7 @@ def evaluate_decay_error(calculated_width, state_label, sector, decay_type):
     sector: 'cc' or 'bb'
     decay_type: 'ee_keV', 'gammagamma_keV', or 'total_MeV'
     """
-    json_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "data", "pdg_data.json")
-    )
-    with open(json_path, "r") as f:
-        pdg = json.load(f)
+    pdg = load_pdg_data()
 
     db_key = f"{sector}_widths_{decay_type}"
 
@@ -35,15 +35,15 @@ def evaluate_decay_error(calculated_width, state_label, sector, decay_type):
 
 
 def run_benchmarks():
-    results_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "results")
-    )
-
-    sectors = ["Bottomonium (b_bbar)", "Charmonium (c_cbar)", "B_c Meson (b_cbar)"]
+    sectors = [
+        ("bb", "Bottomonium (b_bbar)"),
+        ("cc", "Charmonium (c_cbar)"),
+        ("bc", "B_c Meson (b_cbar)"),
+    ]
 
     print("--- Theoretical vs Experimental Benchmarks (MSE) ---")
-    for sector in sectors:
-        csv_path = os.path.join(results_dir, f"{sector}_errors.csv")
+    for sect_prefix, sector in sectors:
+        csv_path = paths.errors_csv(sect_prefix)
         if not os.path.exists(csv_path):
             print(f"[{sector}] Error file not found. Run run_spectrum.py first.")
             continue
@@ -71,12 +71,9 @@ def run_benchmarks():
         )
 
         # Evaluate observables
-        obs_csv_path = os.path.join(results_dir, f"{sector}_observables.csv")
+        obs_csv_path = paths.observables_csv(sect_prefix)
         if os.path.exists(obs_csv_path):
             df_obs = pd.read_csv(obs_csv_path)
-            sect_prefix = (
-                "bb" if "b_bbar" in sector else ("cc" if "c_cbar" in sector else "bc")
-            )
 
             for _, row in df_obs.iterrows():
                 state_full = row["State"]

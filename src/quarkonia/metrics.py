@@ -1,36 +1,46 @@
 import csv
 import os
-import json
 import pandas as pd
 import numpy as np
 
+from . import paths
+from .fitter import SIGMA_THEORY_MEV, WIDTH_THEORY_FRAC
 
-def format_and_evaluate(calculated_states, pdg_data, sector_name, n_fit_params=4):
+
+def format_and_evaluate(
+    calculated_states, pdg_data, sector_name, sector_id, pdg_err=None, n_fit_params=4
+):
     """
-    Tabulates calculated vs experimental masses and reports goodness-of-fit.
+    Tabulate calculated vs experimental masses and report goodness-of-fit.
 
-    In addition to the per-state absolute/percentage errors, this computes a
-    chi-square statistic for the sector:
+    The figure of merit is the RMS mass deviation (model-independent). The
+    chi-square uses a *physical* per-state uncertainty:
 
-        chi^2 = sum_i [ (m_calc,i - m_exp,i) / sigma_i ]^2
+        sigma_i = quad( sigma_exp_i , SIGMA_THEORY_MEV )
 
-    where sigma_i is the propagated mass uncertainty (from the fitted-parameter
-    covariance, in MeV) combined in quadrature with a 1 MeV experimental/rounding
-    floor so the statistic stays finite when no parameter uncertainty is
-    available. The reduced chi^2 uses dof = N_states - n_fit_params. A converged
-    fit with realistic uncertainties should give chi^2/dof of order 1.
+    i.e. the (tiny) PDG experimental error combined in quadrature with the
+    intrinsic theory systematic of the potential model. This is what makes
+    chi^2/dof interpretable: a sector that the model describes to within its
+    systematic gives chi^2/dof ~ 1; charmonium, with larger relativistic
+    corrections, lands above 1, which is physically meaningful rather than an
+    artifact of inflated error bars.
 
     Parameters
     ----------
     calculated_states : dict
-        Maps state name -> (mass_GeV, mass_err_GeV) or bare mass_GeV.
+        Maps state name -> (mass_GeV, mass_err_GeV) or bare mass_GeV. ``mass_err``
+        is the propagated *model* (parameter-covariance) uncertainty, reported for
+        information; it is NOT the chi-square denominator.
     pdg_data : dict
-        Experimental PDG mass data keyed by the bare state label.
+        Experimental masses keyed by bare state label.
     sector_name : str
-        Sector designation, used for the output CSV filename.
+        Display name, used in printouts.
+    sector_id : str
+        Short id (bb/cc/bc/cu), used for the output path.
+    pdg_err : dict, optional
+        Experimental 1-sigma mass errors (GeV) keyed by bare state label.
     n_fit_params : int, optional
-        Number of free fit parameters, used for the degrees of freedom in the
-        reduced chi-square, by default 4 (alpha_s, b, c, sigma).
+        Free parameters, for dof = N_states - n_fit_params.
     """
     print(f"\n--- Error Analysis vs Experimental Data ({sector_name}) ---")
     print(
@@ -38,8 +48,7 @@ def format_and_evaluate(calculated_states, pdg_data, sector_name, n_fit_params=4
     )
     print("-" * 130)
 
-    SIGMA_FLOOR_MEV = 1.0  # experimental/rounding floor to keep chi^2 finite
-
+    pdg_err = pdg_err or {}
     results = []
     chi2 = 0.0
     sq_err_sum = 0.0
@@ -59,7 +68,9 @@ def format_and_evaluate(calculated_states, pdg_data, sector_name, n_fit_params=4
             abs_err = (calc_mass - exp_mass) * 1000.0
             pct_err = abs(calc_mass - exp_mass) / exp_mass * 100.0
             mse = abs_err**2
-            sigma_mev = np.hypot(mass_err * 1000.0, SIGMA_FLOOR_MEV)
+            # Physical 1-sigma: experimental error (quadrature) with the theory floor.
+            sigma_exp_mev = pdg_err.get(pure_state, 0.0) * 1000.0
+            sigma_mev = np.hypot(sigma_exp_mev, SIGMA_THEORY_MEV)
             pull = abs_err / sigma_mev
             chi2 += pull**2
             sq_err_sum += mse
@@ -78,24 +89,22 @@ def format_and_evaluate(calculated_states, pdg_data, sector_name, n_fit_params=4
                 [state, calc_mass, mass_err, "N/A", "N/A", "N/A", "N/A", "N/A"]
             )
 
-    dof = max(n_compared - n_fit_params, 1)
+    dof = n_compared - n_fit_params
     rmse = np.sqrt(sq_err_sum / n_compared) if n_compared else 0.0
-    red_chi2 = chi2 / dof
+    red_chi2 = chi2 / dof if dof > 0 else float("nan")
     print("-" * 130)
+    dof_note = "" if dof > 0 else "  (under-determined: dof <= 0, reduced chi^2 undefined)"
     print(
         f"Goodness of fit ({sector_name}): N = {n_compared} states, "
-        f"dof = {n_compared} - {n_fit_params} = {n_compared - n_fit_params}"
+        f"dof = {n_compared} - {n_fit_params} = {dof}{dof_note}"
     )
     print(
         f"   chi^2 = {chi2:.2f}   chi^2/dof = {red_chi2:.3f}   "
-        f"RMS mass deviation = {rmse:.2f} MeV"
+        f"RMS mass deviation = {rmse:.2f} MeV   "
+        f"(sigma_theory = {SIGMA_THEORY_MEV:.0f} MeV)"
     )
 
-    out_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "results")
-    )
-    os.makedirs(out_dir, exist_ok=True)
-    with open(os.path.join(out_dir, f"{sector_name}_errors.csv"), "w", newline="") as f:
+    with open(paths.errors_csv(sector_id), "w", newline="") as f:
         csv.writer(f).writerows(
             [
                 [
@@ -115,33 +124,15 @@ def format_and_evaluate(calculated_states, pdg_data, sector_name, n_fit_params=4
     return {
         "sector": sector_name,
         "chi2": chi2,
-        "dof": n_compared - n_fit_params,
+        "dof": dof,
         "chi2_per_dof": red_chi2,
         "rms_mev": rmse,
         "n": n_compared,
     }
 
 
-def export_gem_parameters(nu_array, evecs, l_str, sector_name):
-    """
-    Exports the compact 25-row analytical GEM coefficients.
-
-    Parameters
-    ----------
-    nu_array : numpy.ndarray
-        Array of Gaussian basis widths.
-    evecs : numpy.ndarray
-        Matrix containing the computed eigenvectors.
-    l_str : str
-        String representation of the orbital angular momentum.
-    sector_name : str
-        Name of the corresponding particle sector.
-    """
-    out_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "results")
-    )
-    os.makedirs(out_dir, exist_ok=True)
-
+def export_gem_parameters(nu_array, evecs, l_str, sector_id):
+    """Export the compact 25-row analytical GEM coefficients for a wave."""
     data_gem = {
         "Index": np.arange(len(nu_array)),
         "nu_width": nu_array,
@@ -149,47 +140,32 @@ def export_gem_parameters(nu_array, evecs, l_str, sector_name):
         f"c_2{l_str}": evecs[:, 1] if evecs.shape[1] > 1 else np.zeros_like(nu_array),
         f"c_3{l_str}": evecs[:, 2] if evecs.shape[1] > 2 else np.zeros_like(nu_array),
     }
-
-    df_gem = pd.DataFrame(data_gem)
-    df_gem.to_csv(
-        os.path.join(out_dir, f"{sector_name}_{l_str}_Wave_GEM_Coefficients.csv"),
-        index=False,
-    )
+    pd.DataFrame(data_gem).to_csv(paths.gem_csv(sector_id, l_str), index=False)
 
 
-def export_observables(calculated_observables, sector_name):
-    """
-    Exports the computed decay observables to a CSV file.
-    """
-    out_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "results")
-    )
-    os.makedirs(out_dir, exist_ok=True)
-
-    csv_path = os.path.join(out_dir, f"{sector_name}_observables.csv")
-    # Using utf-8 encoding to support unicode characters like γ
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+def export_observables(calculated_observables, sector_id):
+    """Export the computed decay observables to CSV."""
+    with open(paths.observables_csv(sector_id), "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["State", "Observable_Type", "Value_keV", "Error_keV"])
-
         for state, (obs_type, obs_val, obs_err) in calculated_observables.items():
             writer.writerow([state, obs_type, f"{obs_val:.4f}", f"{obs_err:.4f}"])
 
 
 def generate_consolidated_report():
     """
-    Reads the individual error and observable CSVs and cross-references them with pdg_data.json
-    to generate a consolidated error report containing Abs Error, % Error, and MSE.
-    """
-    pdg_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "data", "pdg_data.json")
-    )
-    with open(pdg_path, "r") as f:
-        pdg_data = json.load(f)
+    Cross-reference the per-sector error/observable CSVs with the PDG data to
+    build results/summary/consolidated_report.csv.
 
-    results_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "results")
-    )
+    Mass pulls are read straight from the per-sector errors.csv (already computed
+    with the physical theory-floor sigma). Width pulls fold the same physical
+    error model in: sigma = quad(model_error, WIDTH_THEORY_FRAC * experiment), so
+    a near-zero propagated model error on a tiny D-wave width can no longer
+    manufacture a spurious 100-sigma tension.
+    """
+    from .pdg_loader import load_pdg_data
+
+    pdg_data = load_pdg_data()
 
     sectors = [
         ("bb", "Bottomonium (b_bbar)"),
@@ -199,42 +175,31 @@ def generate_consolidated_report():
     ]
 
     report_data = []
-    SIGMA_FLOOR = 1e-9  # avoid division by zero for the dimensionless pull
 
-    # Process Masses
     for sector_id, sector_name in sectors:
-        mass_csv = os.path.join(results_dir, f"{sector_name}_errors.csv")
+        mass_csv = paths.errors_csv(sector_id)
         if os.path.exists(mass_csv):
             df_mass = pd.read_csv(mass_csv)
             df_valid = df_mass[df_mass["Exp_GeV"] != "N/A"].copy()
             for _, row in df_valid.iterrows():
-                state = row["State"]
-                calc_val = float(row["Calculated_GeV"])
-                exp_val = float(row["Exp_GeV"])
-                abs_err_mev = float(row["Abs_Err_MeV"])
-                pct_err = float(row["Pct_Err"])
-                mse = float(row["MSE_MeV2"])
-                # Propagated 1-sigma uncertainty (MeV) and the pull (chi contribution)
-                unc_mev = float(row.get("Mass_Err_GeV", 0.0)) * 1000.0
-                pull = abs_err_mev / np.hypot(unc_mev, 1.0)  # 1 MeV exp/round floor
-
+                pull = float(row["Pull_sigma"])
                 report_data.append(
                     {
                         "Sector": sector_id.upper(),
                         "Property": "Mass (GeV)",
-                        "State": state,
-                        "Calculated": calc_val,
-                        "Experimental": exp_val,
-                        "Uncertainty": unc_mev,
-                        "Absolute_Error": abs_err_mev,
-                        "Percentage_Error": pct_err,
+                        "State": row["State"],
+                        "Calculated": float(row["Calculated_GeV"]),
+                        "Experimental": float(row["Exp_GeV"]),
+                        "Uncertainty": float(row.get("Mass_Err_GeV", 0.0)) * 1000.0,
+                        "Absolute_Error": float(row["Abs_Err_MeV"]),
+                        "Percentage_Error": float(row["Pct_Err"]),
                         "Pull_sigma": pull,
                         "Chi2_contrib": pull**2,
-                        "MSE": mse,
+                        "MSE": float(row["MSE_MeV2"]),
                     }
                 )
 
-        obs_csv = os.path.join(results_dir, f"{sector_name}_observables.csv")
+        obs_csv = paths.observables_csv(sector_id)
         if os.path.exists(obs_csv):
             df_obs = pd.read_csv(obs_csv)
             for _, row in df_obs.iterrows():
@@ -246,18 +211,17 @@ def generate_consolidated_report():
 
                 exp_val = None
                 if "e+e-" in obs_type:
-                    db_key = f"{sector_id}_widths_ee_keV"
-                    exp_val = pdg_data.get(db_key, {}).get(state_label)
+                    exp_val = pdg_data.get(f"{sector_id}_widths_ee_keV", {}).get(state_label)
                 elif "γγ" in obs_type or "gamma" in obs_type:
-                    db_key = f"{sector_id}_widths_gammagamma_keV"
-                    exp_val = pdg_data.get(db_key, {}).get(state_label)
+                    exp_val = pdg_data.get(f"{sector_id}_widths_gammagamma_keV", {}).get(state_label)
 
                 if exp_val is not None and exp_val > 0:
                     abs_err = abs(calc_val - exp_val)
                     pct_err = (abs_err / exp_val) * 100.0
                     mse = abs_err**2
-                    # Pull uses the propagated width uncertainty (keV) with a small floor
-                    pull = abs_err / max(obs_unc, SIGMA_FLOOR)
+                    # Physical width sigma: model error with a ~30% NR-formula floor.
+                    sigma = np.hypot(obs_unc, WIDTH_THEORY_FRAC * exp_val)
+                    pull = abs_err / sigma
 
                     report_data.append(
                         {
@@ -266,7 +230,7 @@ def generate_consolidated_report():
                             "State": state_full,
                             "Calculated": calc_val,
                             "Experimental": exp_val,
-                            "Uncertainty": obs_unc,
+                            "Uncertainty": sigma,
                             "Absolute_Error": abs_err,
                             "Percentage_Error": pct_err,
                             "Pull_sigma": pull,
@@ -277,6 +241,6 @@ def generate_consolidated_report():
 
     if report_data:
         df_report = pd.DataFrame(report_data)
-        report_path = os.path.join(results_dir, "consolidated_error_report.csv")
+        report_path = paths.summary_csv("consolidated_report.csv")
         df_report.to_csv(report_path, index=False)
         print(f"\nConsolidated error report generated and saved to {report_path}")

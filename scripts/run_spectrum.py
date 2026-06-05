@@ -2,7 +2,6 @@
 
 import os
 import sys
-import json
 import numpy as np
 import pandas as pd
 
@@ -33,6 +32,8 @@ from quarkonia.decay_models import (
     get_e1_decay_width,
 )
 from quarkonia.fitter import get_or_fit_parameters
+from quarkonia.pdg_loader import load_pdg_data
+from quarkonia import paths
 
 
 def propagate_uncertainty(
@@ -241,8 +242,10 @@ def generate_spectrum(
     r,
     pdg_data,
     sector_name,
+    sector_id,
     particle_names,
     params_err=None,
+    pdg_err=None,
     max_n=3,
     max_l=2,
     n_fit_params=4,
@@ -293,7 +296,7 @@ def generate_spectrum(
 
             # Export the representative Singlet state matrix metrics
             if spin == 0:
-                export_gem_parameters(nu_array, evecs, l_chars[l], sector_name)
+                export_gem_parameters(nu_array, evecs, l_chars[l], sector_id)
                 if l == 0:
                     virial_ratio = (
                         check_virial_theorem(
@@ -475,7 +478,8 @@ def generate_spectrum(
             calculated_observables[name_1D] = ("Leptonic Width (e+e-)", w_1D, calculated_observables[name_1D][2])
 
     gof = format_and_evaluate(
-        calculated_masses, pdg_data, sector_name, n_fit_params=n_fit_params
+        calculated_masses, pdg_data, sector_name, sector_id,
+        pdg_err=pdg_err, n_fit_params=n_fit_params,
     )
 
     if calculated_observables:
@@ -483,17 +487,14 @@ def generate_spectrum(
         for state, (obs_type, obs_val, obs_err) in calculated_observables.items():
             print(f"{state:<15} | {obs_type}: {obs_val:.2f} ± {obs_err:.2f} keV")
 
-        export_observables(calculated_observables, sector_name)
+        export_observables(calculated_observables, sector_id)
 
     return calculated_masses, calculated_evecs, nu_array, gof
 
 
 if __name__ == "__main__":
-    pdg_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "data", "pdg_data.json")
-    )
-    with open(pdg_path, "r") as f:
-        all_pdg = json.load(f)
+    # Experimental data is read live from the PDG SQLite dump (data/pdg-*.sqlite).
+    all_pdg = load_pdg_data()
 
     R_max = 15.0
     N = 6000
@@ -525,14 +526,13 @@ if __name__ == "__main__":
         "3D": "B_{c1,2,3}^*",
     }
 
-    results_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "results")
-    )
-
     # Reduced masses for interpolation (defined before pre-fit calls)
     mu_cc = 1.500 / 2.0
     mu_bb = 4.730 / 2.0
     mu_bc = (4.730 * 1.500) / (4.730 + 1.500)
+
+    # Electric charge per sector (for the leptonic-width fit residuals).
+    e_q_map = {"cc": 2.0 / 3.0, "bb": -1.0 / 3.0, "bc": 0.0, "cu": 0.0}
 
     # We need to get bb and cc alpha_s and sigma first to do the B_c interpolation
     (cc_alpha_s, _, _, cc_sigma), cc_errs = get_or_fit_parameters(
@@ -541,7 +541,10 @@ if __name__ == "__main__":
         all_pdg.get("cc", {}),
         r,
         [0.400, 0.183, -0.250, 1.09],
-        os.path.join(results_dir, "cc_params.csv"),
+        paths.params_csv("cc"),
+        pdg_mass_err=all_pdg.get("cc_mass_err_GeV", {}),
+        decay_targets=all_pdg.get("cc_widths_ee_keV", {}),
+        e_q=e_q_map["cc"],
     )
     (bb_alpha_s, _, _, bb_sigma), bb_errs = get_or_fit_parameters(
         4.730,
@@ -549,7 +552,10 @@ if __name__ == "__main__":
         all_pdg.get("bb", {}),
         r,
         [0.350, 0.193, 0.030, 1.34],
-        os.path.join(results_dir, "bb_params.csv"),
+        paths.params_csv("bb"),
+        pdg_mass_err=all_pdg.get("bb_mass_err_GeV", {}),
+        decay_targets=all_pdg.get("bb_widths_ee_keV", {}),
+        e_q=e_q_map["bb"],
     )
 
     # QFT Logarithmic Interpolation of alpha_s and linear interpolation of sigma
@@ -585,6 +591,11 @@ if __name__ == "__main__":
 
     m_u = 0.330  # Constituent light quark mass in GeV
     cu_names = {"1S": "D", "3S": "D^*"}
+    # The D meson has a single anchor mass, which can fix only the potential
+    # offset c. The remaining Cornell parameters are frozen to physical values
+    # (universal string tension b, a light-system coupling alpha_s, and a smearing
+    # sigma) so the sector is not under-determined.
+    cu_alpha_s, cu_b, cu_sigma = 0.50, 0.18, 0.85
 
     sectors_config = [
         {
@@ -639,12 +650,16 @@ if __name__ == "__main__":
             "m_2": m_u,
             "pdg_data": {"(1^1S)": 1.864},
             "names": cu_names,
-            "initial_guesses": [0.500, 0.180, -0.400, 0.85],
-            "bounds": ([0.2, 0.1, -1.0, 0.3], [0.8, 0.3, 1.0, 2.5]),
+            "initial_guesses": [cu_alpha_s, cu_b, -0.400, cu_sigma],
+            "bounds": (
+                [cu_alpha_s - 1e-5, cu_b - 1e-5, -1.0, cu_sigma - 1e-5],
+                [cu_alpha_s + 1e-5, cu_b + 1e-5, 1.0, cu_sigma + 1e-5],
+            ),
             "max_n": 1,
             "max_l": 0,
-            # single anchor mass (D), the 4 parameters are under-determined
-            "n_fit_params": 4,
+            # Only the offset c is free; the single D mass fixes it exactly,
+            # so dof = 1 - 1 = 0 (no longer the old dof = 1 - 4 = -3).
+            "n_fit_params": 1,
         },
     ]
 
@@ -653,14 +668,19 @@ if __name__ == "__main__":
 
     for config in sectors_config:
         print(f"\n--- Fitting/Loading {config['name']} Parameters ---")
+        sid = config["id"]
+        pdg_mass_err = all_pdg.get(f"{sid}_mass_err_GeV", {})
         (alpha_s, b, c, sigma), errs = get_or_fit_parameters(
             m_1=config["m_1"],
             m_2=config["m_2"],
             pdg_data=config["pdg_data"],
             r=r,
             initial_guesses=config["initial_guesses"],
-            csv_path=os.path.join(results_dir, f"{config['id']}_params.csv"),
+            csv_path=paths.params_csv(sid),
             bounds=config["bounds"],
+            pdg_mass_err=pdg_mass_err,
+            decay_targets=all_pdg.get(f"{sid}_widths_ee_keV", {}),
+            e_q=e_q_map.get(sid, 0.0),
         )
         # For sectors with frozen/under-determined parameters, substitute the
         # externally propagated uncertainties (e.g. B_c inherits the interpolated
@@ -676,8 +696,10 @@ if __name__ == "__main__":
             r,
             config["pdg_data"],
             config["name"],
+            sid,
             config["names"],
             params_err=errs,
+            pdg_err=pdg_mass_err,
             max_n=config["max_n"],
             max_l=config["max_l"],
             n_fit_params=config["n_fit_params"],
@@ -879,7 +901,7 @@ if __name__ == "__main__":
 
     if radiative_results:
         rad_df = pd.DataFrame(radiative_results)
-        rad_csv_path = os.path.join(results_dir, "radiative_decays.csv")
+        rad_csv_path = paths.summary_csv("radiative_decays.csv")
         rad_df.to_csv(rad_csv_path, index=False)
         print(f"\nExported radiative transitions to {rad_csv_path}")
 
@@ -916,7 +938,7 @@ if __name__ == "__main__":
     gof_df = pd.DataFrame(gof_summary)[
         ["sector_id", "sector", "n", "chi2", "dof", "chi2_per_dof", "rms_mev"]
     ]
-    gof_csv_path = os.path.join(results_dir, "goodness_of_fit.csv")
+    gof_csv_path = paths.summary_csv("goodness_of_fit.csv")
     gof_df.to_csv(gof_csv_path, index=False)
     print(f"Goodness-of-fit summary saved to {gof_csv_path}\n")
 
