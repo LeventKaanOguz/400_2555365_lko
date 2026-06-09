@@ -59,10 +59,14 @@ Rebuild the human-readable writeup at `REPORT.md` from whatever's in `results/`:
 conda run -n 400 python scripts/generate_report.py
 ```
 
-Make the EPS figures (Gaussian basis coverage plots):
+Make every analysis figure (vector PDF + PNG into `figures/`). Reads only the
+CSVs under `results/` plus the curated literature values in
+`scripts/literature_data.py`, so it is fast and does *not* re-run the fit — run
+`run_spectrum.py` (and `cross_validate.py` for the overfitting panel) first so the
+CSVs exist:
 
 ```bash
-conda run -n 400 python scripts/eps.gen.py
+conda run -n 400 python scripts/make_figures.py
 ```
 
 Old QHO sanity check, kept around for validation:
@@ -91,8 +95,13 @@ scripts/
   test_spectra.py     PDG benchmark pass
   cross_validate.py   train/test split — overfitting diagnostic
   generate_report.py  results/ CSVs -> REPORT.md
-  eps.gen.py          figures
+  make_figures.py     results/ CSVs + literature_data.py -> figures/*.pdf,*.png
+  literature_data.py  curated theory/experiment values from the literature
 ```
+
+The figures (and the LaTeX source under `tex/`) are the submission artifacts.
+`make_figures.py` is the only figure generator; the old `eps.gen.py` was retired
+when the per-sector `results/<sector>/` layout replaced the flat one.
 
 ## How a number gets computed
 
