@@ -97,11 +97,48 @@ scripts/
   generate_report.py  results/ CSVs -> REPORT.md
   make_figures.py     results/ CSVs + literature_data.py -> figures/*.pdf,*.png
   literature_data.py  curated theory/experiment values from the literature
+tex/
+  apssamp.tex         the full REVTeX paper (the long-form final report)
+prestex/
+  presentation.tex    the beamer final-presentation deck (long form, ~15-30 min)
 ```
 
-The figures (and the LaTeX source under `tex/`) are the submission artifacts.
-`make_figures.py` is the only figure generator; the old `eps.gen.py` was retired
-when the per-sector `results/<sector>/` layout replaced the flat one.
+The figures, the LaTeX paper under `tex/`, and the beamer deck under `prestex/`
+are the submission artifacts. `make_figures.py` is the only figure generator; the
+old `eps.gen.py` was retired when the per-sector `results/<sector>/` layout
+replaced the flat one.
+
+**The final presentation** lives in `prestex/presentation.tex` — a self-contained
+beamer deck (`aspectratio=169`, stock **Madrid** theme to match the earlier mock
+deck) that pulls its figures straight from `../figures/*.pdf`, so it has no
+dependency on the slow fit. Build it with plain LaTeX (no conda — that rule is
+Python-only):
+
+```bash
+cd prestex && latexmk -pdf presentation.tex   # or: pdflatex presentation.tex (x2)
+```
+
+This is the **long-form** final talk (~15-30 min, ~24 content slides across 7
+`\section`s: Motivation, GEM, Spin corrections, Fitting/Uncertainties, Mass
+Spectra, Decays, Validation/Outlook). It is the *comprehensive* version that walks
+through every method in the pipeline — not the earlier 3-min/5-slide mock. Writing
+style mirrors the student's own: noun-phrase frame titles, **bold lead-in** bullets,
+honest numbers (bb RMS 7.0 MeV, cc 28.8 MeV, the η_c→γγ ×2.4 overshoot called out as
+an NR-limit artefact). If you trim it back to a short course-limit version, branch —
+don't overwrite this one.
+
+**Submission naming** (everything ships from `submits/`):
+
+```text
+submits/
+  400_prop_2555365_leventkaanoguz.pdf   proposal
+  400_inter_2555365_leventkaanoguz.pdf  interim report
+  400_revtex_2555365.pdf                final paper (copy of tex/apssamp.pdf)
+  400_fipres_2555365.pdf                final presentation (copy of prestex/presentation.pdf)
+```
+
+After recompiling either LaTeX source, copy the fresh PDF into `submits/` under its
+`400_<kind>_2555365*.pdf` name — the graders read `submits/`, not the build dirs.
 
 ## How a number gets computed
 

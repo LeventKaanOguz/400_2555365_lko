@@ -221,7 +221,6 @@ results/
 # so the pipeline is runnable on a fresh clone; the old "all" dump does not.
 data/pdgall*.sqlite
 
-
-400_cpp/
 papers/
 tex/
+prestex/
