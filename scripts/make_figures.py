@@ -55,23 +55,121 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 FIG_DIR = os.path.join(ROOT, "figures")
 os.makedirs(FIG_DIR, exist_ok=True)
 
+# Render every label through a real LaTeX (Computer Modern) so the figures match
+# the typeset paper exactly -- no more literal "^" / "_" in tick labels and no
+# font mismatch between axes text and the surrounding prose. Requires a working
+# TeX with cm-super (checked: type1ec.sty present). If TeX is unavailable, set
+# QGEM_NO_USETEX=1 to fall back to mathtext rendering.
+_USETEX = os.environ.get("QGEM_NO_USETEX", "0") != "1"
+
 plt.rcParams.update(
     {
+        "text.usetex": _USETEX,
+        "text.latex.preamble": r"\usepackage{amsmath}\usepackage{amssymb}",
+        "font.family": "serif",
+        "font.serif": ["Computer Modern Roman", "cmr10", "DejaVu Serif"],
+        "mathtext.fontset": "cm",
         "figure.dpi": 120,
         "savefig.dpi": 300,
-        "font.size": 11,
-        "font.family": "serif",
-        "mathtext.fontset": "dejavuserif",
-        "axes.titlesize": 12,
-        "axes.labelsize": 11,
+        "savefig.bbox": "tight",
+        "savefig.pad_inches": 0.02,
+        "font.size": 12,
+        "axes.titlesize": 12.5,
+        "axes.labelsize": 12.5,
+        "axes.linewidth": 0.8,
         "axes.grid": True,
-        "grid.alpha": 0.25,
+        "grid.alpha": 0.22,
+        "grid.linewidth": 0.6,
         "grid.linestyle": "--",
+        "xtick.labelsize": 10.5,
+        "ytick.labelsize": 10.5,
+        "xtick.direction": "in",
+        "ytick.direction": "in",
+        "xtick.minor.visible": True,
+        "ytick.minor.visible": True,
+        "xtick.top": True,
+        "ytick.right": True,
         "legend.frameon": False,
-        "legend.fontsize": 9,
+        "legend.fontsize": 10,
+        "legend.handlelength": 1.6,
         "lines.linewidth": 1.8,
+        "patch.linewidth": 0.6,
+        "figure.facecolor": "white",
     }
 )
+
+
+# --------------------------------------------------------------------------- #
+# LaTeX label helpers -- the CSV State/Transition columns use Unicode Greek
+# (J/ψ, χ_c, Υ, η_c, γ) and raw spectroscopic notation (1^3P_2). Those are fatal
+# under usetex, so every user-facing label is routed through these converters
+# into valid LaTeX math.
+# --------------------------------------------------------------------------- #
+_GREEK = {
+    "Υ": r"\Upsilon", "ψ": r"\psi", "χ": r"\chi", "η": r"\eta", "γ": r"\gamma",
+    "ω": r"\omega", "φ": r"\varphi", "π": r"\pi", "ρ": r"\rho", "τ": r"\tau",
+    "μ": r"\mu", "ν": r"\nu", "σ": r"\sigma", "Λ": r"\Lambda",
+}
+
+
+def _greekify(s):
+    for u, t in _GREEK.items():
+        s = s.replace(u, t)
+    return s
+
+
+def _brace_digits(s):
+    r"""Brace numeric super/subscripts only: spectroscopic '1^3P_0' -> '1^{3}P_{0}'.
+
+    Digit-only so the multiplicity ``^3`` stops before the orbital letter ``P``
+    (a greedy ``[A-Za-z0-9]+`` would swallow it as ``^{3P}``)."""
+    s = re.sub(r"\^([0-9]+)", r"^{\1}", s)
+    s = re.sub(r"_([0-9]+)", r"_{\1}", s)
+    return s
+
+
+def _brace_sym(s):
+    r"""Brace a particle-symbol subscript, e.g. '\eta_b2' -> '\eta_{b2}'."""
+    return re.sub(r"_([A-Za-z0-9]+)", r"_{\1}", s)
+
+
+# Decay-channel row tags appended to State strings in the consolidated report
+# (e.g. 'χ_c_gg', 'J/ψ_ee') -- not part of the particle name; strip for display.
+_CHANNEL_TAG = re.compile(r"_(?:ee|gg|mm)$")
+
+
+def state_to_tex(name):
+    r"""Unicode state label -> LaTeX math.
+
+    '(1^3P_2) χ_b'    -> r'$(1^{3}P_{2})\,\chi_{b}$'
+    '(1^3P_0) χ_c_gg' -> r'$(1^{3}P_{0})\,\chi_{c}$'   (channel tag stripped)
+    """
+    s = str(name).strip()
+    m = re.match(r"\(([^)]*)\)\s*(.*)", s)
+    if m:
+        spec = _brace_digits(m.group(1))
+        sym = _CHANNEL_TAG.sub("", m.group(2).strip())
+        sym = _brace_sym(_greekify(sym))
+        return rf"$({spec})\,{sym}$" if sym else rf"$({spec})$"
+    s = _CHANNEL_TAG.sub("", s)
+    return "$" + _brace_sym(_greekify(s)) + "$"
+
+
+def transition_to_tex(tr):
+    r"""Radiative-transition label -> LaTeX math.
+
+    '(1^3P_0) χ_c -> (1^3S) J/ψ + γ'
+        -> r'$(1^{3}P_{0})\,\chi_{c}\to (1^{3}S)\,J/\psi\,+\,\gamma$'.
+    """
+    s = str(tr)
+    lhs, _, rhs = s.partition("->")
+    extra = ""
+    if "+" in rhs:
+        rhs, _, plus = rhs.partition("+")
+        extra = r"\,+\," + _brace_sym(_greekify(plus.strip()))
+    L = state_to_tex(lhs).strip("$")
+    R = state_to_tex(rhs).strip("$")
+    return rf"${L}\to {R}{extra}$"
 
 # Constituent quark masses (GeV) and fitted sectors -- mirror run_spectrum.py
 SECTORS = {
@@ -346,7 +444,7 @@ def _spectrum_panel(ax, sub, title):
                     label=("This work (calc.)" if not handles_done else None))
         if pd.notna(row["Experimental"]):
             ax.plot(xc, row["Experimental"], "_", ms=18, color="#b22222",
-                    label=(PDG_LABEL if not handles_done else None))
+                    label=(lit.cite_label(PDG_LABEL) if not handles_done else None))
         handles_done = True
     ax.set_xticks(range(0, 3))
     ax.set_xticklabels(["S", "P", "D"])
@@ -396,7 +494,7 @@ def plot_literature_comparison(sector_id, models):
     if not rows:
         return
 
-    labels = [r["label"] for r in rows]
+    labels = [state_to_tex(r["label"]) for r in rows]
     y = np.arange(len(rows))
     all_models = ["This work"] + list(models.keys())
     offsets = np.linspace(-0.32, 0.32, len(all_models))
@@ -411,10 +509,10 @@ def plot_literature_comparison(sector_id, models):
         if ml == "This work":
             ax.errorbar(xs, y + off, xerr=[r["This work_err"] for r in rows],
                         fmt=marker, color=color, ms=7, capsize=2, elinewidth=1.0,
-                        mec="black", mew=0.6, label=ml, zorder=6)
+                        mec="black", mew=0.6, label=lit.cite_label(ml), zorder=6)
         else:
             ax.plot(xs, y + off, marker, color=color, ms=6.5, alpha=0.9,
-                    mec="black", mew=0.3, label=ml, zorder=4)
+                    mec="black", mew=0.3, label=lit.cite_label(ml), zorder=4)
     ax.set_yticks(y)
     ax.set_yticklabels(labels, fontsize=9)
     ax.set_xlabel(r"$M_{\rm model}-M_{\rm exp}$  [MeV]")
@@ -464,7 +562,8 @@ def plot_model_rms_comparison():
         for xi, v in zip(xb, vals):
             ax.text(xi, v, f"{v:.0f}", ha="center", va="bottom", fontsize=8)
         ax.set_xticks(xb)
-        ax.set_xticklabels(labels, rotation=35, ha="right", fontsize=8)
+        ax.set_xticklabels([lit.cite_label(l) for l in labels],
+                           rotation=35, ha="right", fontsize=8)
         ax.set_ylabel(r"RMS$(M_{\rm model}-M_{\rm exp})$  [MeV]")
         ax.set_title(f"{SECTORS[sector_id]['label']}  "
                      f"($N={len(common)}$ common states)")
@@ -472,6 +571,179 @@ def plot_model_rms_comparison():
                  "(this work, hatched, is fitted to these masses; others predict)",
                  y=1.02)
     save(fig, "B_model_rms")
+
+
+def plot_bc_spectrum_literature():
+    """B_c spectrum: this work vs. literature models (most B_c states are
+    unmeasured, so the comparison is model-to-model, not vs. experiment).
+    The two measured states (B_c, B_c(2S)) and the lattice anchor are marked."""
+    df = load_consolidated()
+    sub = load_masses(df, "bc")
+    models = lit.BC_MESON
+    rows = []
+    for _, row in sub.iterrows():
+        key = row["key"]
+        p = row["parsed"]
+        if p is None or not any(key in mv for mv in models.values()):
+            continue
+        rec = {
+            "label": row["State"].strip(),
+            "sortkey": (p["l"], p["n"], -p["j"]),
+            "key": key,
+            "This work": row["Calculated"] * 1000.0,
+            "This work_err": row["Uncertainty"],
+            "exp": row["Experimental"] * 1000.0 if pd.notna(row["Experimental"]) else None,
+        }
+        for ml, mv in models.items():
+            if key in mv:
+                rec[ml] = mv[key]
+        rows.append(rec)
+    rows.sort(key=lambda d: d["sortkey"])
+    if not rows:
+        return
+
+    labels = [state_to_tex(r["label"]) for r in rows]
+    y = np.arange(len(rows))
+    all_models = ["This work"] + list(models.keys())
+    offsets = np.linspace(-0.34, 0.34, len(all_models))
+
+    fig, ax = plt.subplots(figsize=(10.5, 0.6 * len(rows) + 2.2))
+    for off, ml in zip(offsets, all_models):
+        color, marker = lit.MODEL_STYLE.get(ml, ("gray", "o"))
+        xs = [r.get(ml, np.nan) for r in rows]
+        if ml == "This work":
+            ax.errorbar(xs, y + off, xerr=[r["This work_err"] for r in rows],
+                        fmt=marker, color=color, ms=7, capsize=2, elinewidth=1.0,
+                        mec="black", mew=0.6, label=lit.cite_label(ml), zorder=6)
+        else:
+            ax.plot(xs, y + off, marker, color=color, ms=6.5, alpha=0.9,
+                    mec="black", mew=0.3, label=lit.cite_label(ml), zorder=4)
+    # measured states (PDG) and lattice anchor
+    exp_x = [r["exp"] for r in rows]
+    if any(e is not None for e in exp_x):
+        ax.plot([e if e is not None else np.nan for e in exp_x], y, "|",
+                color="black", ms=22, mew=2.2, zorder=8, label=lit.cite_label(PDG_LABEL))
+    for yi, r in zip(y, rows):
+        latt = lit.BC_LATTICE.get(r["key"])
+        if latt is not None:
+            # label every lattice point "Lattice (HPQCD)"; the legend is
+            # de-duplicated below, so repeats collapse to one entry.
+            ax.errorbar(latt[0], yi, xerr=latt[1], fmt="X", color="#d62728",
+                        ms=9, mec="black", mew=0.5, zorder=7,
+                        label=lit.cite_label("Lattice (HPQCD)"))
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=9)
+    ax.set_xlabel("Mass [MeV]")
+    ax.set_title(r"$B_c$ $(b\bar c)$ spectrum: this work vs. literature"
+                 "\n(most states unmeasured; markers are model predictions)")
+    # de-duplicate legend labels
+    h, l = ax.get_legend_handles_labels()
+    seen = {}
+    for hi, li in zip(h, l):
+        seen.setdefault(li, hi)
+    ax.legend(seen.values(), seen.keys(), loc="best", ncol=2, fontsize=8)
+    ax.invert_yaxis()
+    ax.margins(y=0.02)
+    save(fig, "B_bc_literature")
+
+
+def plot_d_spectrum_literature():
+    """D ($c\\bar u$) spectrum: this work vs. the EFG 2010 relativistic quark
+    model and the PDG-measured $D^0$/$D^{*0}$ anchors.
+
+    The D sector is fitted to the single $D^0$ ($1^1S_0$) mass, so the $D^*$
+    ($1^3S_1$) is a genuine prediction; the heavy-light system is the least
+    controlled by the non-relativistic treatment (the light quark is fast)."""
+    df = load_consolidated()
+    sub = load_masses(df, "cu")
+    models = lit.D_MESON
+    rows = []
+    for _, row in sub.iterrows():
+        key = row["key"]
+        p = row["parsed"]
+        if p is None or not any(key in mv for mv in models.values()):
+            continue
+        rec = {
+            "label": row["State"].strip(),
+            "sortkey": (p["l"], p["n"], -p["j"]),
+            "key": key,
+            "This work": row["Calculated"] * 1000.0,
+            "This work_err": row["Uncertainty"],
+            "exp": row["Experimental"] * 1000.0 if pd.notna(row["Experimental"]) else None,
+        }
+        for ml, mv in models.items():
+            if ml.startswith("PDG"):
+                continue
+            if key in mv:
+                rec[ml] = mv[key]
+        rows.append(rec)
+    rows.sort(key=lambda d: d["sortkey"])
+    if not rows:
+        return
+
+    labels = [state_to_tex(r["label"]) for r in rows]
+    y = np.arange(len(rows))
+    theory_models = [m for m in models if not m.startswith("PDG")]
+    all_models = ["This work"] + theory_models
+    offsets = np.linspace(-0.28, 0.28, len(all_models))
+
+    fig, ax = plt.subplots(figsize=(9.5, 0.9 * len(rows) + 2.4))
+    for off, ml in zip(offsets, all_models):
+        color, marker = lit.MODEL_STYLE.get(ml, ("gray", "o"))
+        xs = [r.get(ml, np.nan) for r in rows]
+        if ml == "This work":
+            ax.errorbar(xs, y + off, xerr=[r["This work_err"] for r in rows],
+                        fmt=marker, color=color, ms=9, capsize=2, elinewidth=1.0,
+                        mec="black", mew=0.6, label=lit.cite_label(ml), zorder=6)
+        else:
+            ax.plot(xs, y + off, marker, color=color, ms=8, alpha=0.9,
+                    mec="black", mew=0.3, label=lit.cite_label(ml), zorder=4)
+    # PDG measured anchors
+    pdg_vals = lit.D_MESON.get("PDG (measured)", {})
+    exp_x = [pdg_vals.get(r["key"], np.nan) for r in rows]
+    if any(not np.isnan(e) for e in exp_x):
+        ax.plot(exp_x, y, "|", color="black", ms=24, mew=2.4, zorder=8,
+                label=lit.cite_label("PDG (measured)"))
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=10)
+    ax.set_xlabel("Mass [MeV]")
+    ax.set_title(r"$D$ $(c\bar u)$ spectrum: this work vs. literature"
+                 "\n($1^1S_0=D^0$ fitted; $1^3S_1=D^{*0}$ predicted)")
+    h, l = ax.get_legend_handles_labels()
+    seen = {}
+    for hi, li in zip(h, l):
+        seen.setdefault(li, hi)
+    ax.legend(seen.values(), seen.keys(), loc="best", fontsize=9)
+    ax.invert_yaxis()
+    ax.margins(y=0.25)
+    save(fig, "B_d_literature")
+
+
+def plot_psi3770_ddbar():
+    r"""psi(3770) -> D Dbar partial width across open-charm strong-decay
+    calculations, against the PDG total.
+
+    Note: this work does NOT predict this width -- it *tunes* its 3P0 vacuum
+    pair-creation strength gamma to the PDG total (see run_spectrum.py), so by
+    construction it reproduces the PDG bar and is not plotted as an independent
+    prediction. This figure is therefore literature context for the showcase."""
+    entries = list(lit.PSI3770_TO_DDBAR.items())
+    labels = [e[0] for e in entries]
+    vals = [e[1] for e in entries]
+    colors = ["#b22222" if "PDG" in lbl else "#2e8b57" for lbl in labels]
+    fig, ax = plt.subplots(figsize=(8.5, 4.6))
+    xb = np.arange(len(entries))
+    ax.bar(xb, vals, color=colors, edgecolor="black", linewidth=0.4, alpha=0.9)
+    for xi, v in zip(xb, vals):
+        ax.text(xi, v, f"{v:.1f}", ha="center", va="bottom", fontsize=9)
+    ax.set_xticks(xb)
+    ax.set_xticklabels([lit.cite_label(l) for l in labels],
+                       rotation=25, ha="right", fontsize=9)
+    ax.set_ylabel(r"$\Gamma(\psi(3770)\to D\bar D)$  [MeV]")
+    ax.set_title(r"$\psi(3770)\to D\bar D$ partial width: ${}^3P_0$ model"
+                 " vs. literature\n(this work tunes $\\gamma$ to the PDG total"
+                 " -- not an independent prediction)")
+    save(fig, "D6_psi3770_ddbar")
 
 
 # =========================================================================== #
@@ -494,8 +766,8 @@ def plot_mass_residuals():
                    label=r"$\pm10$ MeV theory syst.")
         ax.axhline(0, color="black", lw=1.0)
         ax.set_xticks(x)
-        ax.set_xticklabels([s.strip() for s in sub["State"]],
-                           rotation=60, ha="right", fontsize=8)
+        ax.set_xticklabels([state_to_tex(s) for s in sub["State"]],
+                           rotation=60, ha="right", fontsize=9)
         ax.set_ylabel(r"$M_{\rm calc}-M_{\rm exp}$  [MeV]")
         ax.set_title(f"{SECTORS[sid]['label']} mass residuals "
                      "(bars: model uncertainty)")
@@ -515,7 +787,7 @@ def plot_pulls():
         ax.bar(x, sub["Pull_sigma"], color=SECTORS[sid]["color"], alpha=0.7,
                width=0.7, label=SECTORS[sid]["label"])
         ticks += list(x)
-        ticklabels += [s.strip() for s in sub["State"]]
+        ticklabels += [state_to_tex(s) for s in sub["State"]]
         xbase = x[-1] + 2
     for k in (-1, 1):
         ax.axhline(k, color="gray", ls="--", lw=1)
@@ -579,68 +851,105 @@ def _width_rows(df, sector, kind):
     return sub
 
 
-def plot_width_comparison(kind, fname, title):
+def plot_width_comparison(kind, fname, title, lit_widths=None):
+    """Bar chart of this work's widths vs. PDG, with literature predictions
+    overlaid as markers when ``lit_widths`` (``{sector: {model: {key: keV}}}``)
+    is supplied. ``key`` is the canonical_key of the state (e.g. '1 3S1')."""
     df = load_consolidated()
     rows = []
     tag = {"cc": r"$c\bar c$", "bb": r"$b\bar b$"}
     for sid in ("cc", "bb"):
         for _, row in _width_rows(df, sid, kind).iterrows():
-            rows.append((f"{tag[sid]} {row['State'].strip()}",
+            rows.append((sid, canonical_key(row["State"]),
+                         rf"{tag[sid]}\;{state_to_tex(row['State'])}",
                          row["Calculated"], row["Uncertainty"], row["Experimental"]))
     if not rows:
         return
-    labels, calc, err, exp = zip(*rows)
+    sids, keys, labels, calc, err, exp = zip(*rows)
     y = np.arange(len(rows))
-    fig, ax = plt.subplots(figsize=(8.5, 0.55 * len(rows) + 1.6))
+    fig, ax = plt.subplots(figsize=(9.5, 0.6 * len(rows) + 1.8))
     w = 0.38
     ax.barh(y + w / 2, calc, w, xerr=err, color="#1f4e8c", alpha=0.85,
             label="This work", capsize=2, error_kw={"elinewidth": 1})
     ax.barh(y - w / 2, exp, w, color="#b22222", alpha=0.85, label=PDG_LABEL)
+
+    # Overlay literature predictions as markers on each row.
+    if lit_widths is not None:
+        models_seen = set()
+        for yi, sid, key in zip(y, sids, keys):
+            for model, vals in lit_widths.get(sid, {}).items():
+                v = vals.get(key)
+                if v is None:
+                    continue
+                color, marker = lit.MODEL_STYLE.get(model, ("0.4", "o"))
+                ax.plot(v, yi, marker, color=color, ms=7, mec="black", mew=0.4,
+                        zorder=5, label=(lit.cite_label(model) if model not in models_seen else None))
+                models_seen.add(model)
     ax.set_yticks(y)
     ax.set_yticklabels(labels, fontsize=9)
     ax.set_xlabel(r"$\Gamma$  [keV]")
     ax.set_title(title)
-    ax.legend()
+    ax.legend(fontsize=8, ncol=2)
     ax.invert_yaxis()
     save(fig, fname)
 
 
+def _radiative_key(transition, sector):
+    """Translate a radiative_decays.csv transition string, e.g.
+    '(1^3P_0) χ_c -> (1^3S) J/ψ + γ', into the literature_data key form
+    ('1 3P0 -> 1 3S1', with a '(bb)' tag on the initial state for bottomonium)."""
+    parts = str(transition).split("->")
+    if len(parts) != 2:
+        return None
+    lhs, rhs = parts
+    ki = canonical_key(lhs)
+    kf = canonical_key(rhs)
+    if ki is None or kf is None:
+        return None
+    if sector == "BB":
+        ki = f"{ki}(bb)"
+    return f"{ki} -> {kf}"
+
+
 def plot_radiative_widths():
     rad = pd.read_csv(paths.summary_csv("radiative_decays.csv"))
-    # Experimental reference values (keV); aligned with the user's paper
-    # Table (tab:radiative_decays). None where no firm measurement exists.
-    exp_map = {
-        "(1^3S) J/ψ -> (1^1S) η_c + γ": 1.58,
-        "(2^3S) ψ -> (2^1S) η_c + γ": 0.05,
-        "(1^3P_0) χ_c -> (1^3S) J/ψ + γ": 116.0,
-        "(1^3P_1) χ_c -> (1^3S) J/ψ + γ": 288.0,
-        "(1^3S) Υ_b -> (1^1S) η_b + γ": None,
-        "(2^3S) Υ -> (2^1S) η_b + γ": None,
-        "(1^3P_0) χ_b -> (1^3S) Υ_b + γ": 27.5,
-        "(1^3P_1) χ_b -> (1^3S) Υ_b + γ": 31.1,
-    }
     rows = []
     for _, r in rad.iterrows():
-        exp = exp_map.get(r["Transition"], None)
-        short = (r["Transition"].replace("(1^3S)", "").replace("(1^1S)", "")
-                 .replace(" + γ", "γ"))
-        rows.append((f"[{r['Type']}] {r['Transition']}", r["Width_keV"],
+        key = _radiative_key(r["Transition"], r["Sector"])
+        exp = lit.RADIATIVE_WIDTHS_EXP.get(key) if key else None
+        rows.append((key, rf"[{r['Type']}]\ {transition_to_tex(r['Transition'])}",
+                     r["Width_keV"],
                      r["Width_err_keV"], exp))
-    labels, calc, err, exp = zip(*rows)
+    keys, labels, calc, err, exp = zip(*rows)
     y = np.arange(len(rows))
-    fig, ax = plt.subplots(figsize=(9.5, 0.55 * len(rows) + 1.6))
+    fig, ax = plt.subplots(figsize=(11, 0.62 * len(rows) + 1.8))
     w = 0.38
     ax.barh(y + w / 2, calc, w, xerr=err, color="#2e8b57", alpha=0.85,
             label="This work", capsize=2, error_kw={"elinewidth": 1})
     exp_y = [(yy - w / 2) for yy, e in zip(y, exp) if e is not None]
     exp_v = [e for e in exp if e is not None]
-    ax.barh(exp_y, exp_v, w, color="#b22222", alpha=0.85, label="Experiment")
+    ax.barh(exp_y, exp_v, w, color="#b22222", alpha=0.85,
+            label=lit.cite_label("Experiment"))
+
+    # Overlay literature theory predictions (markers) per transition.
+    models_seen = set()
+    for yi, key in zip(y, keys):
+        if key is None:
+            continue
+        for model, v in lit.RADIATIVE_WIDTHS.get(key, {}).items():
+            if model == "PDG" or v is None or v <= 0:
+                continue
+            color, marker = lit.MODEL_STYLE.get(model, ("0.4", "o"))
+            ax.plot(v, yi, marker, color=color, ms=7, mec="black", mew=0.4,
+                    zorder=5, label=(model if model not in models_seen else None))
+            models_seen.add(model)
+
     ax.set_yticks(y)
     ax.set_yticklabels(labels, fontsize=8)
     ax.set_xscale("log")
     ax.set_xlabel(r"$\Gamma$  [keV]  (log scale)")
-    ax.set_title("Radiative E1/M1 transition widths vs. experiment")
-    ax.legend()
+    ax.set_title("Radiative E1/M1 transition widths vs. experiment and literature")
+    ax.legend(fontsize=8, ncol=2)
     ax.invert_yaxis()
     save(fig, "D3_radiative_widths")
 
@@ -697,12 +1006,18 @@ def plot_wavefunction_at_origin():
         x = np.arange(len(allkeys)) + (i - 1) * width
         ax.bar(x, vals, width, color=SECTORS[sid]["color"],
                label=SECTORS[sid]["label"])
+        # Overlay the Eichten-Quigg 2019 reference |R(0)|^2 (cc, bb only).
+        ref = lit.R0_SQUARED.get(sid)
+        if ref is not None:
+            ref_vals = [ref.get(k, np.nan) for k in allkeys]
+            ax.plot(x, ref_vals, "_", color="black", ms=14, mew=2.0, zorder=6,
+                    label=(lit.cite_label("Eichten-Quigg 2019") if i == 0 else None))
     ax.set_xticks(np.arange(len(allkeys)))
     ax.set_xticklabels(allkeys)
     ax.set_ylabel(r"$|R(0)|^2$  [GeV$^3$]")
     ax.set_xlabel("S-wave state")
     ax.set_title(r"Wavefunction at the origin $|R(0)|^2$ "
-                 "(drives annihilation widths)")
+                 "(bars: this work; ticks: Eichten-Quigg 2019)")
     ax.legend()
     save(fig, "D5_wavefunction_origin")
 
@@ -794,7 +1109,7 @@ def plot_cornell_literature(params):
                        rf"($\alpha_s$={pr['alpha_s']:.2f}, $b$={pr['b']:.3f})")
     cp = lit.CORNELL_PARAMS["Cornell (Eichten 1980)"]
     axL.plot(r * HBARC_FM, -4.0 / 3.0 * cp["alpha_s"] / r + cp["b"] * r, "k--",
-             lw=2.2, label=r"Cornell/Eichten 1980 ($\alpha_s$=0.39, $b$=0.183)")
+             lw=2.2, label=r"Cornell/Eichten 1980 ($\alpha_s$=0.39, $b$=0.183) [4]")
     axL.axhline(0, color="0.6", lw=0.7)
     axL.set_xlabel(r"$r$  [fm]")
     axL.set_ylabel(r"$\hat V(r)=-\frac{4}{3}\,\frac{\alpha_s}{r}+b\,r$  [GeV]")
@@ -818,10 +1133,11 @@ def plot_cornell_literature(params):
     for xi, v in zip(xb, vals):
         axR.text(xi, v + 0.004, f"{v:.3f}", ha="center", va="bottom", fontsize=7.5)
     axR.set_xticks(xb)
-    axR.set_xticklabels(labels, rotation=40, ha="right", fontsize=8)
+    axR.set_xticklabels([lit.cite_label(l) for l in labels],
+                        rotation=40, ha="right", fontsize=8)
     axR.set_ylabel(r"string tension $b$  [GeV$^2$]")
     axR.set_ylim(0, max(vals) * 1.18)
-    axR.set_title("String tension vs. literature & accepted value")
+    axR.set_title("String tension vs. literature and accepted value")
     axR.legend(fontsize=8, loc="upper left")
     save(fig, "E3_cornell_literature")
 
@@ -844,6 +1160,8 @@ def main():
     plot_literature_comparison("cc", lit.CHARMONIUM)
     plot_literature_comparison("bb", lit.BOTTOMONIUM)
     plot_model_rms_comparison()
+    plot_bc_spectrum_literature()
+    plot_d_spectrum_literature()
 
     print("Group C: fit-quality diagnostics")
     plot_mass_residuals()
@@ -852,12 +1170,15 @@ def main():
 
     print("Group D: decay widths & observables")
     plot_width_comparison("Leptonic Width (e+e-)", "D1_leptonic_widths",
-                          r"Leptonic $V\to e^+e^-$ widths vs. PDG")
+                          r"Leptonic $V\to e^+e^-$ widths vs. PDG and literature",
+                          lit_widths=lit.LEPTONIC_WIDTHS)
     plot_width_comparison("Two-Photon Width (γγ)", "D2_twophoton_widths",
-                          r"Two-photon $P\to\gamma\gamma$ widths vs. PDG")
+                          r"Two-photon $P\to\gamma\gamma$ widths vs. PDG and literature",
+                          lit_widths=lit.TWO_PHOTON_WIDTHS)
     plot_radiative_widths()
     plot_rms_radii()
     plot_wavefunction_at_origin()
+    plot_psi3770_ddbar()
 
     print("Group E: physics inputs")
     plot_cornell_potentials(params)

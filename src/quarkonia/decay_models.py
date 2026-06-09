@@ -289,8 +289,19 @@ def get_m1_decay_width(mass_i, mass_f, c_i, nu_i, c_f, nu_f, sys, e_q):
 
 def get_e1_decay_width(mass_i, mass_f, c_i, nu_i, c_f, nu_f, sys, e_q):
     """
-    Calculates the Electric Dipole (E1) radiative transition width.
-    Approximated for a P -> S + gamma transition.
+    Calculates the Electric Dipole (E1) radiative transition width for a
+    P -> S + gamma transition (e.g. chi_cJ -> J/psi gamma).
+
+    The dipole matrix element is the radial expectation value of the position
+    operator,
+
+        <f|r|i> = int_0^inf u_f(r) * r * u_i(r) dr,
+
+    with u(r) = r R(r). For the Gaussian basis u_i = r^(l+1) e^{-nu r^2}, the
+    integrand of a P(l=1) -> S(l=0) transition is r^{l_f+1} * r * r^{l_i+1}
+    = r^{0+1 + 1 + 1+1} = r^4, so the analytic moment is I_4 (NOT the bare
+    overlap I_3 -- the explicit factor of r from the dipole operator must be
+    kept). This matches Eq. (e1) of the accompanying paper.
     """
     if mass_i <= mass_f:
         return 0.0
@@ -307,7 +318,8 @@ def get_e1_decay_width(mass_i, mass_f, c_i, nu_i, c_f, nu_f, sys, e_q):
     for idx_i in range(len(nu_i)):
         for idx_f in range(len(nu_f)):
             nu_sum = nu_i[idx_i] + nu_f[idx_f]
-            I_ij = analytical_integral(3, nu_sum)  # <f|r|i> = int u_f*u_i dr, p = L_f+L_i+2 = 0+1+2 = 3
+            # <f|r|i>: u_f * r * u_i = r^(L_f+1) * r * r^(L_i+1) = r^4 for P->S
+            I_ij = analytical_integral(4, nu_sum)
             matrix_element += c_norm_i[idx_i] * c_norm_f[idx_f] * I_ij
 
     width_GeV = (4.0 / 9.0) * ALPHA_EM * (e_q**2) * (k**3) * (matrix_element**2)
