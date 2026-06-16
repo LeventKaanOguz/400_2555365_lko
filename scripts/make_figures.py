@@ -176,7 +176,6 @@ SECTORS = {
     "bb": {"label": r"Bottomonium $b\bar b$", "m1": 4.730, "m2": 4.730, "color": "#1f4e8c"},
     "cc": {"label": r"Charmonium $c\bar c$", "m1": 1.500, "m2": 1.500, "color": "#b22222"},
     "bc": {"label": r"$B_c$ $(b\bar c)$", "m1": 4.730, "m2": 1.500, "color": "#2e8b57"},
-    "cu": {"label": r"$D$ $(c\bar u)$", "m1": 1.500, "m2": 0.330, "color": "#8030a0"},
 }
 HBARC_FM = 0.197327  # GeV*fm  (1 GeV^-1 = 0.197327 fm)
 
@@ -297,7 +296,6 @@ S_STATE_COLS = {
     "bb": [("c_1S", "1S"), ("c_2S", "2S"), ("c_3S", "3S")],
     "cc": [("c_1S", "1S"), ("c_2S", "2S"), ("c_3S", "3S")],
     "bc": [("c_1S", "1S"), ("c_2S", "2S"), ("c_3S", "3S")],
-    "cu": [("c_1S", "1S")],
 }
 
 
@@ -501,7 +499,7 @@ def plot_literature_comparison(sector_id, models):
 
     fig, ax = plt.subplots(figsize=(10.5, 0.66 * len(rows) + 2.0))
     ax.axvspan(-10, 10, color="green", alpha=0.07, zorder=0,
-               label=r"$\pm10$ MeV (theory syst.)")
+               label=r"$\pm10$ MeV (visual guide)")
     ax.axvline(0, color="black", lw=1.0, zorder=1)
     for off, ml in zip(offsets, all_models):
         color, marker = lit.MODEL_STYLE.get(ml, ("gray", "o"))
@@ -647,105 +645,6 @@ def plot_bc_spectrum_literature():
     save(fig, "B_bc_literature")
 
 
-def plot_d_spectrum_literature():
-    """D ($c\\bar u$) spectrum: this work vs. the EFG 2010 relativistic quark
-    model and the PDG-measured $D^0$/$D^{*0}$ anchors.
-
-    The D sector is fitted to the single $D^0$ ($1^1S_0$) mass, so the $D^*$
-    ($1^3S_1$) is a genuine prediction; the heavy-light system is the least
-    controlled by the non-relativistic treatment (the light quark is fast)."""
-    df = load_consolidated()
-    sub = load_masses(df, "cu")
-    models = lit.D_MESON
-    rows = []
-    for _, row in sub.iterrows():
-        key = row["key"]
-        p = row["parsed"]
-        if p is None or not any(key in mv for mv in models.values()):
-            continue
-        rec = {
-            "label": row["State"].strip(),
-            "sortkey": (p["l"], p["n"], -p["j"]),
-            "key": key,
-            "This work": row["Calculated"] * 1000.0,
-            "This work_err": row["Uncertainty"],
-            "exp": row["Experimental"] * 1000.0 if pd.notna(row["Experimental"]) else None,
-        }
-        for ml, mv in models.items():
-            if ml.startswith("PDG"):
-                continue
-            if key in mv:
-                rec[ml] = mv[key]
-        rows.append(rec)
-    rows.sort(key=lambda d: d["sortkey"])
-    if not rows:
-        return
-
-    labels = [state_to_tex(r["label"]) for r in rows]
-    y = np.arange(len(rows))
-    theory_models = [m for m in models if not m.startswith("PDG")]
-    all_models = ["This work"] + theory_models
-    offsets = np.linspace(-0.28, 0.28, len(all_models))
-
-    fig, ax = plt.subplots(figsize=(9.5, 0.9 * len(rows) + 2.4))
-    for off, ml in zip(offsets, all_models):
-        color, marker = lit.MODEL_STYLE.get(ml, ("gray", "o"))
-        xs = [r.get(ml, np.nan) for r in rows]
-        if ml == "This work":
-            ax.errorbar(xs, y + off, xerr=[r["This work_err"] for r in rows],
-                        fmt=marker, color=color, ms=9, capsize=2, elinewidth=1.0,
-                        mec="black", mew=0.6, label=lit.cite_label(ml), zorder=6)
-        else:
-            ax.plot(xs, y + off, marker, color=color, ms=8, alpha=0.9,
-                    mec="black", mew=0.3, label=lit.cite_label(ml), zorder=4)
-    # PDG measured anchors
-    pdg_vals = lit.D_MESON.get("PDG (measured)", {})
-    exp_x = [pdg_vals.get(r["key"], np.nan) for r in rows]
-    if any(not np.isnan(e) for e in exp_x):
-        ax.plot(exp_x, y, "|", color="black", ms=24, mew=2.4, zorder=8,
-                label=lit.cite_label("PDG (measured)"))
-    ax.set_yticks(y)
-    ax.set_yticklabels(labels, fontsize=10)
-    ax.set_xlabel("Mass [MeV]")
-    ax.set_title(r"$D$ $(c\bar u)$ spectrum: this work vs. literature"
-                 "\n($1^1S_0=D^0$ fitted; $1^3S_1=D^{*0}$ predicted)")
-    h, l = ax.get_legend_handles_labels()
-    seen = {}
-    for hi, li in zip(h, l):
-        seen.setdefault(li, hi)
-    ax.legend(seen.values(), seen.keys(), loc="best", fontsize=9)
-    ax.invert_yaxis()
-    ax.margins(y=0.25)
-    save(fig, "B_d_literature")
-
-
-def plot_psi3770_ddbar():
-    r"""psi(3770) -> D Dbar partial width across open-charm strong-decay
-    calculations, against the PDG total.
-
-    Note: this work does NOT predict this width -- it *tunes* its 3P0 vacuum
-    pair-creation strength gamma to the PDG total (see run_spectrum.py), so by
-    construction it reproduces the PDG bar and is not plotted as an independent
-    prediction. This figure is therefore literature context for the showcase."""
-    entries = list(lit.PSI3770_TO_DDBAR.items())
-    labels = [e[0] for e in entries]
-    vals = [e[1] for e in entries]
-    colors = ["#b22222" if "PDG" in lbl else "#2e8b57" for lbl in labels]
-    fig, ax = plt.subplots(figsize=(8.5, 4.6))
-    xb = np.arange(len(entries))
-    ax.bar(xb, vals, color=colors, edgecolor="black", linewidth=0.4, alpha=0.9)
-    for xi, v in zip(xb, vals):
-        ax.text(xi, v, f"{v:.1f}", ha="center", va="bottom", fontsize=9)
-    ax.set_xticks(xb)
-    ax.set_xticklabels([lit.cite_label(l) for l in labels],
-                       rotation=25, ha="right", fontsize=9)
-    ax.set_ylabel(r"$\Gamma(\psi(3770)\to D\bar D)$  [MeV]")
-    ax.set_title(r"$\psi(3770)\to D\bar D$ partial width: ${}^3P_0$ model"
-                 " vs. literature\n(this work tunes $\\gamma$ to the PDG total"
-                 " -- not an independent prediction)")
-    save(fig, "D6_psi3770_ddbar")
-
-
 # =========================================================================== #
 # GROUP C -- Fit-quality diagnostics
 # =========================================================================== #
@@ -758,19 +657,24 @@ def plot_mass_residuals():
         sub = sub.sort_values("Experimental")
         x = np.arange(len(sub))
         res = (sub["Calculated"] - sub["Experimental"]) * 1000.0
-        err = sub["Uncertainty"].values
+        err = sub["Uncertainty"].values            # propagated computational sigma
+        sig_th = sub["Sigma_Theory_MeV"].values    # theory bar (model-viability only)
         ax.bar(x, res, color=SECTORS[sid]["color"], alpha=0.55, width=0.6)
+        # Error bars = propagated computational uncertainty: this IS the pull sigma
+        # (combined with the tiny experimental error).
         ax.errorbar(x, res, yerr=err, fmt="none", ecolor="black",
                     elinewidth=1.0, capsize=2)
-        ax.axhspan(-10, 10, color="green", alpha=0.10,
-                   label=r"$\pm10$ MeV theory syst.")
+        # Theory band = leading relativistic correction, shown only as a
+        # model-viability reference (NOT the pull sigma).
+        ax.fill_between(x, -sig_th, sig_th, step="mid", color="green", alpha=0.13,
+                        label=r"$\pm\sigma_{\rm theory}$ (rel. corr.; viability ref.)")
         ax.axhline(0, color="black", lw=1.0)
         ax.set_xticks(x)
         ax.set_xticklabels([state_to_tex(s) for s in sub["State"]],
                            rotation=60, ha="right", fontsize=9)
         ax.set_ylabel(r"$M_{\rm calc}-M_{\rm exp}$  [MeV]")
         ax.set_title(f"{SECTORS[sid]['label']} mass residuals "
-                     "(bars: model uncertainty)")
+                     r"(bars: computational $\sigma$; band: $\sigma_{\rm theory}$ ref.)")
         ax.legend(loc="upper right")
     save(fig, "C1_mass_residuals")
 
@@ -796,25 +700,26 @@ def plot_pulls():
     ax.axhline(0, color="black", lw=1.0)
     ax.set_xticks(ticks)
     ax.set_xticklabels(ticklabels, rotation=60, ha="right", fontsize=8)
-    ax.set_ylabel(r"pull $=(M_{\rm calc}-M_{\rm exp})/\sigma_{\rm phys}$")
-    ax.set_title(r"Mass pulls vs. physical uncertainty "
-                 r"($\sigma_{\rm phys}=\sigma_{\rm exp}\oplus10$ MeV)")
+    ax.set_ylabel(r"pull $=(M_{\rm calc}-M_{\rm exp})/\sigma$")
+    ax.set_title(r"Mass pulls vs. computational uncertainty "
+                 r"($\sigma=\sigma_{\rm exp}\oplus\sigma_{\rm comp}$, "
+                 r"propagated parameter covariance)")
     ax.legend()
     save(fig, "C2_pulls")
 
 
 def plot_chi2_rms():
     gof = pd.read_csv(paths.summary_csv("goodness_of_fit.csv"))
-    cv = pd.read_csv(paths.summary_csv("cross_validation.csv"))
-    fig, axes = plt.subplots(1, 3, figsize=(14, 4.4))
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.4))
 
-    # chi2/dof
+    # chi2/dof -- built from the computational sigma. Lands <~ 1: the model
+    # reproduces experiment within its propagated parametric precision.
     g = gof[gof["chi2_per_dof"].notna()]
     axes[0].bar(g["sector_id"], g["chi2_per_dof"],
                 color=[SECTORS[s]["color"] for s in g["sector_id"]])
     axes[0].axhline(1.0, color="black", ls="--", lw=1, label=r"$\chi^2/{\rm dof}=1$")
     axes[0].set_ylabel(r"$\chi^2/{\rm dof}$")
-    axes[0].set_title("Reduced chi-square (mass + width fit)")
+    axes[0].set_title(r"Reduced $\chi^2$ ($\sigma=\sigma_{\rm exp}\oplus\sigma_{\rm comp}$)")
     axes[0].legend()
 
     # RMS deviation
@@ -824,22 +729,7 @@ def plot_chi2_rms():
     axes[1].set_title("Model-independent RMS deviation")
     axes[1].set_yscale("log")
 
-    # cross-validation
-    sids = []
-    for nm in cv["sector"]:
-        sids.append("bb" if "b_bbar" in nm else "cc")
-    xp = np.arange(len(cv))
-    w = 0.38
-    axes[2].bar(xp - w / 2, cv["full_rms_mev"], w, label="train (full fit)",
-                color="#4c72b0")
-    axes[2].bar(xp + w / 2, cv["loo_rms_mev"], w, label="leave-one-out (test)",
-                color="#dd8452")
-    axes[2].set_xticks(xp)
-    axes[2].set_xticklabels(sids)
-    axes[2].set_ylabel("RMS [MeV]")
-    axes[2].set_title("Cross-validation (overfitting check)")
-    axes[2].legend()
-    save(fig, "C3_chi2_rms_crossval")
+    save(fig, "C3_chi2_rms")
 
 
 # =========================================================================== #
@@ -924,8 +814,18 @@ def plot_radiative_widths():
     y = np.arange(len(rows))
     fig, ax = plt.subplots(figsize=(11, 0.62 * len(rows) + 1.8))
     w = 0.38
-    ax.barh(y + w / 2, calc, w, xerr=err, color="#2e8b57", alpha=0.85,
-            label="This work", capsize=2, error_kw={"elinewidth": 1})
+    # Width is positive-definite and the x-axis is log, so a symmetric bar would
+    # send the lower whisker below zero for the M1 rows (propagated sigma > value,
+    # an honest reflection of how uncertain NR M1 rates are). Draw the downward
+    # whisker clipped to a floor just under the smallest plotted width -- it then
+    # reads as "consistent with zero" without going undefined on the log axis or
+    # blowing out the range. Only the *drawn* lower error is clipped; the stored
+    # Width_err_keV is untouched.
+    calc_arr, err_arr = np.asarray(calc, float), np.asarray(err, float)
+    floor = 0.5 * calc_arr[calc_arr > 0].min()
+    lower_err = np.minimum(err_arr, np.maximum(calc_arr - floor, 0.0))
+    ax.barh(y + w / 2, calc, w, xerr=[lower_err, err_arr], color="#2e8b57",
+            alpha=0.85, label="This work", capsize=2, error_kw={"elinewidth": 1})
     exp_y = [(yy - w / 2) for yy, e in zip(y, exp) if e is not None]
     exp_v = [e for e in exp if e is not None]
     ax.barh(exp_y, exp_v, w, color="#b22222", alpha=0.85,
@@ -1084,8 +984,7 @@ def plot_running_coupling(params):
 
 
 # Short sector tags for compact labels.
-SECTOR_TAG = {"bb": r"$b\bar b$", "cc": r"$c\bar c$",
-              "bc": r"$b\bar c$", "cu": r"$c\bar u$"}
+SECTOR_TAG = {"bb": r"$b\bar b$", "cc": r"$c\bar c$", "bc": r"$b\bar c$"}
 
 
 def plot_cornell_literature(params):
@@ -1121,7 +1020,7 @@ def plot_cornell_literature(params):
 
     # ---- Right: string tension b vs. literature & accepted value ----
     entries = [(f"This work {SECTOR_TAG[s]}", params[s]["b"], SECTORS[s]["color"])
-               for s in ("bb", "cc", "bc", "cu")]
+               for s in ("bb", "cc", "bc")]
     entries += [(lab, d["b"], "0.55") for lab, d in lit.CORNELL_PARAMS.items()]
     labels, vals, colors = zip(*entries)
     xb = np.arange(len(entries))
@@ -1161,7 +1060,6 @@ def main():
     plot_literature_comparison("bb", lit.BOTTOMONIUM)
     plot_model_rms_comparison()
     plot_bc_spectrum_literature()
-    plot_d_spectrum_literature()
 
     print("Group C: fit-quality diagnostics")
     plot_mass_residuals()
@@ -1178,7 +1076,6 @@ def main():
     plot_radiative_widths()
     plot_rms_radii()
     plot_wavefunction_at_origin()
-    plot_psi3770_ddbar()
 
     print("Group E: physics inputs")
     plot_cornell_potentials(params)

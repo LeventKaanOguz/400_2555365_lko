@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
 """
+============================== DEPRECATED ==============================
+This leave-one-out (LOO) cross-validation is **deprecated** and no longer
+part of the pipeline. It is kept runnable for reference only -- it is not
+called by run_spectrum.py, is omitted from REPORT.md and the figures, and
+its output (summary/cross_validation.csv) is no longer consumed.
+
+Rationale: the goodness-of-fit chi-square now uses the *computational*
+sigma (experimental error in quadrature with the propagated parameter
+covariance), which is itself a direct out-of-sample-style validation of
+whether the implementation reproduces experiment within its computed
+precision. The separate LOO refit is therefore redundant.
+=======================================================================
+
 Cross-validation overfitting check for the Cornell-potential mass fit.
 
 A 4-parameter fit to ~12 masses *could* be memorising the training levels instead

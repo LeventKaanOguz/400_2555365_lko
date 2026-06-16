@@ -1,5 +1,4 @@
 import numpy as np
-from scipy.optimize import least_squares
 from .gem_solver import analytical_integral
 
 # Fundamental QFT Constants
@@ -129,96 +128,6 @@ def get_two_photon_width(mass_GeV, c_vec, nu_array, sys, e_q, l=0):
 
     width_GeV = (12.0 * ALPHA_EM**2 * e_q**4) / (mass_GeV**2) * R_0_sq * qcd_correction
     return width_GeV * 1e6  # Return in keV
-
-
-def calc_overlap_3p0_simplified(c_A, nu_A, c_B, nu_B, c_C, nu_C, l_A=0, l_B=0, l_C=0):
-    """
-    Calculates the phenomenological spatial overlap integral for a 3P0 hadronic decay A -> B + C.
-    """
-    overlap = 0.0
-    norms_A = np.sqrt(analytical_integral(2 * l_A + 2, 2.0 * nu_A))
-    norms_B = np.sqrt(analytical_integral(2 * l_B + 2, 2.0 * nu_B))
-    norms_C = np.sqrt(analytical_integral(2 * l_C + 2, 2.0 * nu_C))
-
-    c_norm_A = c_A / norms_A
-    c_norm_B = c_B / norms_B
-    c_norm_C = c_C / norms_C
-
-    for i in range(len(nu_A)):
-        for j in range(len(nu_B)):
-            for k in range(len(nu_C)):
-                nu_sum = nu_A[i] + nu_B[j] + nu_C[k]
-                p_sum = l_A + l_B + l_C + 2
-                I_ijk = analytical_integral(p_sum, nu_sum)
-                overlap += c_norm_A[i] * c_norm_B[j] * c_norm_C[k] * I_ijk
-    return overlap
-
-
-def get_3p0_decay_width(
-    mass_A, mass_B, mass_C, c_A, nu_A, c_B, nu_B, c_C, nu_C, l_A=0, gamma_3p0=0.4
-):
-    if mass_A < mass_B + mass_C:
-        return 0.0
-
-    # Fully relativistic momentum phase space factor
-    # Matches p = sqrt(M_initial^2 / 4 - M_final^2) if M_B == M_C
-    if np.isclose(mass_B, mass_C):
-        p = np.sqrt(mass_A**2 / 4.0 - mass_B**2)
-    else:
-        p = np.sqrt(
-            (mass_A**2 - (mass_B + mass_C) ** 2) * (mass_A**2 - (mass_B - mass_C) ** 2)
-        ) / (2.0 * mass_A)
-    overlap = calc_overlap_3p0_simplified(
-        c_A, nu_A, c_B, nu_B, c_C, nu_C, l_A=l_A, l_B=0, l_C=0
-    )
-    width = (
-        2.0
-        * np.pi
-        * p
-        * (np.sqrt(mass_B**2 + p**2) * np.sqrt(mass_C**2 + p**2) / mass_A)
-        * (gamma_3p0**2)
-        * (overlap**2)
-    )
-    return width * 1000.0  # Return in MeV
-
-
-def tune_gamma_3p0(
-    target_width_MeV,
-    mass_A,
-    mass_B,
-    mass_C,
-    c_A,
-    nu_A,
-    c_B,
-    nu_B,
-    c_C,
-    nu_C,
-    l_A=0,
-    initial_gamma=0.4,
-):
-    """
-    Optimizer script/function that adjusts the dimensionless vacuum pair-creation
-    parameter gamma until the calculated width matches the experimental target.
-    """
-
-    def objective(gamma):
-        calc_width = get_3p0_decay_width(
-            mass_A,
-            mass_B,
-            mass_C,
-            c_A,
-            nu_A,
-            c_B,
-            nu_B,
-            c_C,
-            nu_C,
-            l_A=l_A,
-            gamma_3p0=gamma[0],
-        )
-        return calc_width - target_width_MeV
-
-    res = least_squares(objective, [initial_gamma], bounds=([0.0], [np.inf]))
-    return res.x[0]
 
 
 def calc_R_prime_origin_sq(c_vec, nu_array, l=1):

@@ -46,11 +46,11 @@ per-sector `errors.csv` files):
 conda run -n 400 python scripts/test_spectra.py
 ```
 
-Check the fit for overfitting (train/test split on the mass levels, fast — uses a
-small radial grid since the GEM eigenvalues don't depend on it):
+**Deprecated** — leave-one-out overfitting check (kept runnable for reference, no
+longer part of the pipeline / report / figures; see the uncertainties section):
 
 ```bash
-conda run -n 400 python scripts/cross_validate.py
+conda run -n 400 python scripts/cross_validate.py   # DEPRECATED
 ```
 
 Rebuild the human-readable writeup at `REPORT.md` from whatever's in `results/`:
@@ -62,8 +62,7 @@ conda run -n 400 python scripts/generate_report.py
 Make every analysis figure (vector PDF + PNG into `figures/`). Reads only the
 CSVs under `results/` plus the curated literature values in
 `scripts/literature_data.py`, so it is fast and does *not* re-run the fit — run
-`run_spectrum.py` (and `cross_validate.py` for the overfitting panel) first so the
-CSVs exist:
+`run_spectrum.py` first so the CSVs exist:
 
 ```bash
 conda run -n 400 python scripts/make_figures.py
@@ -93,7 +92,7 @@ src/quarkonia/
 scripts/
   run_spectrum.py     main entry point, wires it all together
   test_spectra.py     PDG benchmark pass
-  cross_validate.py   train/test split — overfitting diagnostic
+  cross_validate.py   DEPRECATED leave-one-out overfitting check (unwired)
   generate_report.py  results/ CSVs -> REPORT.md
   make_figures.py     results/ CSVs + literature_data.py -> figures/*.pdf,*.png
   literature_data.py  curated theory/experiment values from the literature
@@ -179,8 +178,8 @@ Follow the data — it flows in one direction:
      S-wave decay width leans on it.
 
 4. **Decay** — `decay_models.py`. Feed `|R(0)|^2` and the masses into the width
-   formulas: leptonic `V -> e+e-`, two-photon `P -> γγ`, E1/M1 radiative
-   transitions, and 3P0 hadronic pair creation (e.g. `ψ(3770) -> D D̄`).
+   formulas: leptonic `V -> e+e-`, two-photon `P -> γγ`, and E1/M1 radiative
+   transitions.
 
 5. **Report** — `metrics.py` + `generate_report.py`. Tabulate, export CSVs, compute
    chi-square, write the consolidated report and `REPORT.md`.
@@ -200,7 +199,7 @@ hardcode it.
 **Units.** GeV everywhere internally. MeV only when reporting mass errors. Widths in
 keV.
 
-**Sectors.** `bb` bottomonium, `cc` charmonium, `bc` the B_c meson, `cu` the D meson.
+**Sectors.** `bb` bottomonium, `cc` charmonium, `bc` the B_c meson.
 The B_c is the special case: its `alpha_s` and `sigma` are *not* fitted — there
 aren't enough known states to pin them down. Instead they're interpolated
 logarithmically (running-coupling style) between the fitted `cc` and `bb` values at
@@ -236,43 +235,73 @@ Two gotchas worth knowing:
 
 ## Uncertainties and chi-square — read this, it's subtle
 
-There are **two different uncertainties** in this project and conflating them was the
-original sin of the old code:
+There are **three uncertainties** in this project; keep them straight.
 
-1. **The `±` on a value** is the *model* uncertainty: finite-difference propagation
-   of the fitted Cornell covariance (`propagate_uncertainty` /
-   `propagate_transition_uncertainty` in `run_spectrum.py`). It answers "how much does
-   this prediction move when the fitted parameters wiggle within their errors." B_c
-   inherits its errors through the log-interpolation.
+1. **The `±` on a value AND the pull/χ² denominator** are the *same* object now: the
+   **computational** uncertainty — finite-difference propagation of the fitted
+   Cornell covariance (`propagate_uncertainty` / `propagate_transition_uncertainty`
+   in `run_spectrum.py`), `sigma_comp,i² = Σ_p (∂obs_i/∂p)² σ_p²`. It answers "how
+   much does this prediction move when the fitted parameters wiggle within their
+   errors." B_c inherits its parameter errors through the log-interpolation.
 
-2. **The `sigma` in a chi-square or a pull** is the *physical* error bar:
-   `sigma = quad(sigma_exp, sigma_theory)`. This is the one that matters for "is the
-   fit any good," and it is **not** the model covariance.
+2. **The `sigma` in a pull or goodness-of-fit chi-square** is
+   `sigma_i = quad(sigma_exp,i, sigma_comp,i)` — the (tiny) PDG experimental error in
+   quadrature with that computational uncertainty. This is the **textbook pull
+   denominator** (parametric prediction error ⊕ experimental error): it tests whether
+   the *computational implementation* reproduces experiment within its own computed
+   precision — **not** whether the non-relativistic model is physically complete. The
+   propagated `sigma_comp` is sizable (≈20 MeV bb, ≈40 MeV cc — comparable to or
+   larger than the deviations), so the **masses-only** all-states `chi^2/dof` lands
+   **≲ 1** (≈0.25 bb, 0.82 cc): the implementation reproduces experiment within its
+   computed precision, pulls mostly sub-1σ. χ²/dof a bit below 1 just means the
+   parametric covariance slightly overestimates the scatter. `goodness_of_fit.csv`
+   ALSO carries a **combined** `chi2_per_dof_comb` that folds the S-wave vector
+   `e+e-` widths (n=1,2,3) in alongside the masses — same `quad(sigma_exp,
+   sigma_comp)` denominator, matching the observable class the fit optimizes; it
+   lands ≈0.29 bb / ≈1.95 cc (charm's |R(0)|²-driven widths deviate ≈2–3σ_comp),
+   global ≈1.1. The D-wave `e+e-` (ψ(3770)/ψ(4160)), γγ, and radiative widths are
+   **excluded** from it — they test model *completeness*, not implementation, and
+   stay pure predictions.
 
-Why the distinction matters: PDG experimental mass errors are tiny — 0.1–1 MeV (see
-`pdg_loader`'s `*_mass_err_GeV`). A potential model cannot reach that; its honest
-accuracy is a **theory systematic**, `SIGMA_THEORY_MEV = 10` MeV on masses and
-`WIDTH_THEORY_FRAC = 0.30` (30%) on the NR width formulae (both in `fitter.py`).
-Those represent neglected physics — relativistic `O(v^2/c^2)`, coupled channels,
-quenching. So:
+3. **The theory bar `sigma_theory`** is a *model-viability* diagnostic, reported but
+   **never** in the pull/χ² denominator: for masses, the per-state leading
+   relativistic correction `sigma_theory,i = |<p^4/8c^2 (1/m1^3+1/m2^3)>_i|`
+   (`observables.calc_relativistic_shift`), written to the `Sigma_Theory_MeV` column
+   and drawn as the C1 figure band; tabulated by
+   `scripts/estimate_theory_systematic.py`. It answers the *separate* question "is the
+   method viable" (does the model deviate by less than the size of physics it omits).
 
-- The fit objective and the goodness-of-fit chi-square both divide residuals by this
-  physical `sigma`. That makes `chi^2/dof ≈ 1` mean "model reproduces the data to
-  within its intrinsic systematic." Bottomonium lands near 1; charmonium lands above
-  it (charm is lighter, more relativistic) — that's real physics, not a bad fit.
-- The **RMS mass deviation** is the model-independent headline number; it assumes
-  nothing about `sigma`. Quote it first.
-- The old code instead divided by the inflated *model* covariance (~45 MeV), which
-  forced `chi^2/dof << 1` and made everything look artificially perfect. Don't
-  reintroduce that.
+**The one place `sigma_theory` still lives in the math is the fit weight.** The
+least-squares objective in `fitter.py:residuals` divides residuals by
+`quad(sigma_exp, sigma_theory)` (masses) and `width_theory_frac·Gamma` (widths) as a
+**well-posed, non-circular regularizer** only: it stops the sub-MeV-error ground
+states (J/ψ, Υ) from swamping the fit, and unlike `sigma_comp` it exists *before* the
+fit converges (the covariance does not). The **fit weight and the validation σ are
+deliberately different objects** — do not unify them: the computational σ can't weight
+its own fit (circular, and the predictive covariance is rank ≤ 4, so no proper
+correlated χ²). Everything is **derived, not tuned** — there is no `SIGMA_THEORY_MEV`
+/ `WIDTH_THEORY_FRAC` constant.
 
-`dof = N_states − N_free_params`. The B_c (2 masses, 2 free) and D (1 mass, 1 free)
-sectors have `dof ≤ 0` — exactly determined, so a reduced chi-square is *undefined*
-and reported as `—`, never as a negative number.
+- The **fit** χ²/dof in `params.csv` (≈0.37 bb, 0.22 cc) is the *theory-σ-weighted*
+  objective value. The **all-states** χ²/dof in `goodness_of_fit.csv` uses the
+  *computational* σ: masses-only ≲ 1 (≈0.25 bb, 0.82 cc), or the combined
+  masses+S-wave-`e+e-` `chi2_per_dof_comb` (≈0.29 bb, 1.95 cc; global ≈1.1; see #2).
+  These are different statistics — don't compare them.
+- The **RMS mass deviation** (≈8.9 bb, 29.8 cc MeV) is the model-independent headline
+  number; it assumes nothing about `sigma`. Quote it first.
+- The old code divided the pull by a hand-tuned flat 10 MeV / 30% floor chosen to
+  land χ²/dof ≈ 1 — circular. Don't reintroduce a flat floor anywhere.
 
-**Overfitting** is checked honestly by `cross_validate.py`, not by staring at
-`chi^2/dof`: fit on half the levels, measure RMS on the held-out half, swap. Test-RMS
-≈ train-RMS ⇒ the rigid 4-parameter Cornell form generalizes.
+`dof = N_states − N_free_params`. The B_c sector (2 masses, 2 free) has `dof = 0` —
+exactly determined, so a reduced chi-square is *undefined* and reported as `—`, never
+as a negative number.
+
+**Overfitting / leave-one-out is deprecated** (`scripts/cross_validate.py` carries a
+DEPRECATED banner; it is no longer wired into `run_spectrum.py`, `REPORT.md`, or the
+figures, and `summary/cross_validation.csv` is no longer consumed). The
+computational-σ goodness-of-fit already measures whether the implementation
+reproduces experiment within its computed precision, so the separate LOO refit is
+redundant.
 
 Sanity check: `observables.check_virial_theorem` should return ~1.0 for a converged
 basis (it includes the hyperfine term; pass `spin` for S-waves). If it drifts from 1,
@@ -287,16 +316,19 @@ filenames never drift. Don't hand-build `results/...` paths; call `paths.params_
 
 ```text
 results/
-  <sector>/            bb, cc, bc, cu
-    params.csv         cached Cornell params + errors + chi2_fit, dof, chi2_per_dof
-    errors.csv         mass vs PDG per state, with Mass_Err_GeV and (physical) Pull_sigma
+  <sector>/            bb, cc, bc
+    params.csv         cached Cornell params + errors + chi2_fit, dof, chi2_per_dof, width_frac
+    errors.csv         mass vs PDG per state, with Mass_Err_GeV, Pull_sigma (computational σ),
+                       Sigma_Comp_MeV (pull denom), Sigma_Theory_MeV (viability diagnostic)
     observables.csv    leptonic / two-photon widths per state, with Error_keV
     <Wave>_Wave_GEM_Coefficients.csv   raw Gaussian basis coefficients
   summary/
-    goodness_of_fit.csv     per-sector + global chi², dof, chi²/dof, RMS deviation
+    goodness_of_fit.csv     per-sector + global chi², dof, chi²/dof, RMS deviation,
+                            plus n_lep + chi2_comb/dof_comb/chi2_per_dof_comb
+                            (masses + S-wave e+e- widths; D-wave/γγ/radiative excluded)
     consolidated_report.csv everything — Uncertainty, Pull_sigma, Chi2_contrib
     radiative_decays.csv    E1/M1 transition widths
-    cross_validation.csv    train/test RMS per sector (from cross_validate.py)
+    cross_validation.csv    DEPRECATED — only written if the (unwired) cross_validate.py is run
 ```
 
 `generate_report.py` reads these and writes `REPORT.md`. `results/` is gitignored

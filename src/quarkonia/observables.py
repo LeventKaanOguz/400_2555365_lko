@@ -190,6 +190,70 @@ def check_virial_theorem(c_vec, nu_array, sys, l, spin=None):
     return 2.0 * t_exp / rdv
 
 
+def calc_relativistic_shift(c_vec, nu_array, sys, l):
+    r"""Leading relativistic correction to a level, and the NRQCD velocity.
+
+    A non-relativistic potential model omits the next term in expanding
+    :math:`\sqrt{p^2c^2+m^2c^4}`, namely
+
+    .. math:: \Delta H = -\frac{p^4}{8c^2}\left(\frac1{m_1^3}+\frac1{m_2^3}\right).
+
+    Its expectation value on the eigenstate is a *computed* (not assumed) estimate
+    of how far that level can be expected to sit from experiment -- it is the
+    "size of the first omitted term", the standard effective-theory truncation
+    error. We use ``abs(dE_rel)`` as the per-state theory uncertainty on the mass.
+
+    ``<p^4>`` is evaluated exactly in the non-orthogonal Gaussian basis via
+    ``<p^4> = c^T P2 S^{-1} P2 c`` with ``P2 = 2 mu T`` (the model's own kinetic
+    operator), so the spread of ``p^2`` is kept rather than approximated by
+    ``<p^2>^2``. The convention matches :func:`check_virial_theorem`: ``c_vec`` are
+    the GEM coefficients on the normalized basis and ``c_norm = c_vec / norms``.
+
+    Parameters
+    ----------
+    c_vec : numpy.ndarray
+        Eigenvector coefficients (un-normalized GEM coefficients).
+    nu_array : numpy.ndarray
+        Gaussian basis widths.
+    sys : QuarkoniumSystem
+        Quarkonium system (provides ``mu``, ``m_1``, ``m_2``, ``hbar``).
+    l : int
+        Orbital angular momentum quantum number.
+
+    Returns
+    -------
+    (float, float)
+        ``(abs(dE_rel) in GeV, <v^2>)`` where ``<v^2> = <p^2> / m_light^2`` is the
+        velocity-squared of the lighter quark (the expansion parameter).
+    """
+    norms = np.sqrt(analytical_integral(2 * l + 2, 2.0 * nu_array))
+    c_norm = c_vec / norms
+    nu_ij = nu_array[:, np.newaxis] + nu_array[np.newaxis, :]
+
+    # Kinetic operator T (same exact first-derivative expansion as solve_gem /
+    # check_virial_theorem); p^2 = 2 mu T.
+    term1 = (l + 1.0) ** 2 * analytical_integral(2 * l, nu_ij)
+    term2 = -2.0 * (l + 1.0) * nu_ij * analytical_integral(2 * l + 2, nu_ij)
+    term3 = (
+        4.0
+        * nu_array[:, np.newaxis]
+        * nu_array[np.newaxis, :]
+        * analytical_integral(2 * l + 4, nu_ij)
+    )
+    T = (sys.hbar**2 / (2.0 * sys.mu)) * (term1 + term2 + term3)
+    P2 = 2.0 * sys.mu * T
+    S = analytical_integral(2 * l + 2, nu_ij)  # raw overlap
+
+    p2 = float(c_norm @ P2 @ c_norm)
+    # exact <p^4> via the resolution of identity in the non-orthogonal basis
+    p4 = float(c_norm @ P2 @ np.linalg.solve(S, P2 @ c_norm))
+
+    dE_rel = -p4 / 8.0 * (1.0 / sys.m_1**3 + 1.0 / sys.m_2**3)  # c = 1 (GeV units)
+    m_light = min(sys.m_1, sys.m_2)
+    v2 = p2 / m_light**2
+    return abs(dE_rel), v2
+
+
 def get_wfo_exact(c_i, nu_array, r_array):
     u_prime_0 = 0.0
     for c, nu in zip(c_i, nu_array):

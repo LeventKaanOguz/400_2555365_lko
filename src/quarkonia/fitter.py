@@ -7,28 +7,88 @@ from .observables import (
     get_mass,
     calc_tensor_mixing_exact,
     calc_tensor_shift_exact,
+    calc_relativistic_shift,
 )
-from .decay_models import get_leptonic_width
+from .decay_models import get_leptonic_width, get_running_alpha_s
 
-# --- Physical error model ----------------------------------------------------
+# --- Physical error model (derived, not tuned) -------------------------------
 # The fit is a true (dimensionless) chi-square: every residual is divided by a
-# physically motivated 1-sigma uncertainty rather than a hand-tuned weight.
+# physically motivated 1-sigma uncertainty *computed from the model*, not a
+# hand-tuned floor.
 #
 # Experimental PDG mass errors are tiny (~0.1-1 MeV, see pdg_loader) -- far below
-# the intrinsic accuracy of a quenched Cornell + perturbative-correction model.
-# So the dominant, honest error bar on each predicted mass is a *theory
-# systematic* SIGMA_THEORY_MEV (neglected relativistic O(v^2/c^2), coupled-channel
-# and quenching effects). Using sigma_i = quad(sigma_exp, SIGMA_THEORY) makes the
-# weighting essentially uniform without the precisely-measured states (J/psi,
-# Upsilon) swamping everything, which is exactly what the old ad-hoc {4,3,2,1}
-# weights were faking.
-SIGMA_THEORY_MEV = 10.0
-# Non-relativistic annihilation-width formulae (Gamma ~ |R(0)|^2) carry large
-# perturbative-QCD and relativistic corrections; ~30% is a standard estimate.
-WIDTH_THEORY_FRAC = 0.30
+# the intrinsic accuracy of a non-relativistic Cornell model. The honest error
+# bar on each predicted mass is therefore a *theory* uncertainty: the magnitude
+# of the leading omitted physics. For a non-relativistic potential model that is
+# the leading relativistic correction, Delta H = -p^4/(8c^2)(1/m1^3 + 1/m2^3),
+# the next term in the v^2/c^2 expansion. Its expectation value on each state
+# (observables.calc_relativistic_shift) is the "size of the first omitted term"
+# -- the standard effective-theory truncation error -- and is used as the
+# per-state mass sigma. It is sector- AND state-dependent with zero free
+# parameters: charm (<v^2> ~ 0.24) automatically gets a larger bar than bottom
+# (<v^2> ~ 0.085), and the precisely-measured J/psi / Upsilon no longer swamp the
+# fit. (This replaces the old hand-tuned flat 10 MeV floor.)
+#
+# The annihilation-width formulae (Gamma ~ |R(0)|^2) carry an O(alpha_s) QCD
+# radiative correction (the 16 alpha_s/3pi factor already in get_leptonic_width)
+# plus O(v^2) relativistic corrections. The per-sector fractional width
+# uncertainty is the size of those, quad(16 alpha_s/3pi, sqrt(<v^2>)) -- ~0.6 for
+# bottom, ~0.9 for charm -- again derived, replacing the old flat 30%.
+
 # Only sub-threshold, narrow S-wave vectors (n <= this) are clean enough to use
 # as leptonic-width constraints in the fit.
 DECAY_FIT_MAX_N = 2
+
+# Map a bare state label "(n^{2S+1}L...)" to the solved (L,S) channel key and the
+# radial index n-1, so the per-state relativistic sigma can be read off the same
+# eigenvectors the masses come from.
+_L_OF = {"S": 0, "P": 1, "D": 2, "F": 3}
+
+
+def _state_channel(state):
+    """(channel_key, n_index, l) for a bare state label, or None if not solved."""
+    try:
+        n = int(state[1])
+        spin = (int(state[3]) - 1) // 2  # 2S+1 -> S
+        lchar = state[4]
+    except (IndexError, ValueError):
+        return None
+    if lchar not in _L_OF:
+        return None
+    return f"1{lchar}{spin}", n - 1, _L_OF[lchar]
+
+
+def sigma_theory_gev(ch, sys, state):
+    """Per-state mass theory sigma (GeV) = |leading relativistic correction|.
+
+    ``ch`` is the dict of solved channels (key -> (evals, u, evecs, nu)) built by
+    :func:`_solve_channels`. Returns ``None`` when the state has no solved channel.
+    """
+    info = _state_channel(state)
+    if info is None:
+        return None
+    key, idx, l = info
+    if key not in ch:
+        return None
+    _, _, evecs, nu = ch[key]
+    if idx < 0 or idx >= evecs.shape[1]:
+        return None
+    dE_rel, _ = calc_relativistic_shift(evecs[:, idx], nu, sys, l)
+    return dE_rel
+
+
+def width_theory_frac(ch, sys):
+    """Per-sector fractional width uncertainty = quad(16 alpha_s/3pi, sqrt(<v^2>)).
+
+    The O(alpha_s) QCD radiative factor (same coupling get_leptonic_width applies)
+    and the O(v^2) relativistic scale, both derived. ``<v^2>`` is taken from the
+    1^3S_1 ground state.
+    """
+    alpha_s_run = get_running_alpha_s(sys)
+    qcd_mag = 16.0 * alpha_s_run / (3.0 * np.pi)
+    _, _, evecs_1S1, nu_1S1 = ch["1S1"]
+    _, v2 = calc_relativistic_shift(evecs_1S1[:, 0], nu_1S1, sys, l=0)
+    return float(np.hypot(qcd_mag, np.sqrt(v2)))
 
 
 def _solve_channels(params, m_1, m_2, r):
@@ -112,27 +172,55 @@ def compute_spectrum_masses(params, m_1, m_2, r):
     return _masses_from_channels(sys, ch)
 
 
-def residuals(params, m_1, m_2, pdg_masses, pdg_mass_err, r, decay_targets=None, e_q=0.0):
+def residuals(
+    params, m_1, m_2, pdg_masses, pdg_mass_err, r,
+    decay_targets=None, e_q=0.0, sigma_mode="state",
+):
     """Dimensionless (chi) residuals: (model - experiment) / sigma_physical.
 
-    Mass residuals use sigma = quad(sigma_exp, SIGMA_THEORY_MEV). When
-    ``decay_targets`` (a {state_label: Gamma_ee_keV} map) and a non-zero quark
+    Mass residuals use ``sigma = quad(sigma_exp, sigma_theory)`` where
+    ``sigma_theory`` is the derived leading relativistic correction
+    (:func:`sigma_theory_gev`). With ``sigma_mode="state"`` (default) it is the
+    state's own |dE_rel|; with ``sigma_mode="sector"`` it is one value for the
+    whole sector (the mean over the fitted states), the only sanctioned fallback
+    if the self-consistent per-state fit fails to converge.
+
+    When ``decay_targets`` ({state_label: Gamma_ee_keV}) and a non-zero quark
     charge ``e_q`` are supplied, the measured S-wave leptonic widths are added as
-    extra residuals weighted by WIDTH_THEORY_FRAC, so the wavefunction-at-origin
-    helps constrain the potential -- not masses alone.
+    extra residuals weighted by the derived per-sector fraction
+    (:func:`width_theory_frac`), so the wavefunction-at-origin helps constrain the
+    potential -- not masses alone.
     """
     sys, ch = _solve_channels(params, m_1, m_2, r)
     calc = _masses_from_channels(sys, ch)
+
+    # Per-state theory sigma (MeV) for every fitted state, derived from the same
+    # eigenvectors the masses come from.
+    sig_theory = {}
+    for state in pdg_masses:
+        if pdg_masses[state] is None or state not in calc:
+            continue
+        s = sigma_theory_gev(ch, sys, state)
+        if s is not None:
+            sig_theory[state] = s * 1000.0  # GeV -> MeV
+    sector_sigma = (
+        float(np.mean(list(sig_theory.values()))) if sig_theory else 10.0
+    )
 
     res = []
     for state, exp_m in pdg_masses.items():
         if exp_m is None or state not in calc:
             continue
         sigma_exp = (pdg_mass_err or {}).get(state, 0.0) * 1000.0
-        sigma = np.hypot(sigma_exp, SIGMA_THEORY_MEV)
+        if sigma_mode == "sector":
+            sigma_th = sector_sigma
+        else:
+            sigma_th = sig_theory.get(state, sector_sigma)
+        sigma = np.hypot(sigma_exp, sigma_th)
         res.append((calc[state] - exp_m) * 1000.0 / sigma)
 
     if decay_targets and e_q != 0.0:
+        frac = width_theory_frac(ch, sys)
         evals_1S_1, _, evecs_1S_1, nu_1S_1 = ch["1S1"]
         for state, gamma_exp in decay_targets.items():
             if gamma_exp is None or gamma_exp <= 0 or not state.endswith("^3S)"):
@@ -144,7 +232,7 @@ def residuals(params, m_1, m_2, pdg_masses, pdg_mass_err, r, decay_targets=None,
             gamma_calc = get_leptonic_width(
                 calc[state], evecs_1S_1[:, idx], nu_1S_1, sys, e_q, l=0
             )
-            sigma = WIDTH_THEORY_FRAC * gamma_exp
+            sigma = frac * gamma_exp
             res.append((gamma_calc - gamma_exp) / sigma)
 
     return res
@@ -194,13 +282,28 @@ def fit_and_save_parameters(
     # Linear loss -> the minimised objective is the true chi-square (residuals are
     # already normalised by physical sigmas, so robust losses are unnecessary and
     # would make the reported chi^2 non-standard).
-    result = least_squares(
-        residuals,
-        initial_guesses,
-        args=(m_1, m_2, pdg_data, pdg_mass_err, r, decay_targets, e_q),
-        bounds=bounds,
-        method="trf",  # handles bounds and the under-determined/frozen sectors
-    )
+    #
+    # The physical sigma is the derived per-state relativistic correction
+    # (sigma_mode="state"). This is self-consistent (the weights depend on the
+    # current wavefunctions), so it is iteratively re-evaluated by least_squares.
+    # The ONLY sanctioned fallback, if the per-state fit fails to converge, is a
+    # single derived per-sector sigma -- never a frozen/initial-guess sigma.
+    def _fit(mode):
+        return least_squares(
+            residuals,
+            initial_guesses,
+            args=(m_1, m_2, pdg_data, pdg_mass_err, r, decay_targets, e_q, mode),
+            bounds=bounds,
+            method="trf",  # handles bounds and the under-determined/frozen sectors
+        )
+
+    result = _fit("state")
+    if not result.success:
+        print(
+            "  [warn] per-state sigma fit did not converge "
+            f"(status={result.status}); retrying with a derived per-sector sigma."
+        )
+        result = _fit("sector")
 
     optimized_params = result.x
 
@@ -208,8 +311,8 @@ def fit_and_save_parameters(
     # result.fun holds the dimensionless residuals (model - exp)/sigma, so the
     # plain chi^2 = sum_i residual_i^2 is a standard statistic. Count only the
     # genuinely free parameters: a tight bound (e.g. the frozen alpha_s/sigma of
-    # B_c, or all but c for the D meson) is not a degree of freedom, so it must not
-    # inflate the dof into a negative number.
+    # B_c) is not a degree of freedom, so it must not inflate the dof into a
+    # negative number.
     lo, hi = np.asarray(bounds[0], float), np.asarray(bounds[1], float)
     n_free = int(np.sum((hi - lo) > 1e-4))
     residual_vec = np.asarray(result.fun)
@@ -239,15 +342,24 @@ def fit_and_save_parameters(
 
     perr = np.sqrt(np.diag(cov))
 
+    # Derived per-sector fractional width uncertainty (for the width pulls in the
+    # consolidated report), computed once from the converged wavefunctions.
+    try:
+        sys_final, ch_final = _solve_channels(optimized_params, m_1, m_2, r)
+        wfrac = width_theory_frac(ch_final, sys_final)
+    except Exception:
+        wfrac = float("nan")
+
     os.makedirs(os.path.dirname(output_csv) or ".", exist_ok=True)
     with open(output_csv, mode="w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(
             ["alpha_s", "b", "c", "sigma", "err_alpha_s", "err_b", "err_c",
-             "err_sigma", "chi2_fit", "dof", "chi2_per_dof"]
+             "err_sigma", "chi2_fit", "dof", "chi2_per_dof", "width_frac"]
         )
         writer.writerow(
-            list(optimized_params) + list(perr) + [chi2_fit, dof, chi2_per_dof]
+            list(optimized_params) + list(perr)
+            + [chi2_fit, dof, chi2_per_dof, wfrac]
         )
 
     print(f"Parameters successfully fitted and saved to {output_csv}")

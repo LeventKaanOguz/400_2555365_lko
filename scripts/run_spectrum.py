@@ -20,14 +20,14 @@ from quarkonia.observables import (
     get_mass,
     check_virial_theorem,
     calc_rms_radius,
+    calc_relativistic_shift,
+    calc_tensor_mixing_exact,
 )
 from quarkonia.decay_models import (
     get_leptonic_width,
     get_leptonic_width_mixed,
     get_two_photon_width,
     get_two_photon_width_pwave,
-    get_3p0_decay_width,
-    tune_gamma_3p0,
     get_m1_decay_width,
     get_e1_decay_width,
 )
@@ -106,13 +106,6 @@ def propagate_transition_uncertainty(
     state_f_name,
     decay_type,
     e_q=0.0,
-    gamma_3p0=0.4,
-    m_B=None,
-    evec_B=None,
-    nu_B=None,
-    m_C=None,
-    evec_C=None,
-    nu_C=None,
 ):
     eps = 1e-4
     dobs_dp = []
@@ -204,37 +197,76 @@ def propagate_transition_uncertainty(
                     sys_dn,
                     e_q,
                 )
-        elif decay_type == "3P0":
-            w_up = get_3p0_decay_width(
-                m_i_up,
-                m_B,
-                m_C,
-                evecs_i_up[:, idx_i],
-                nu_i_up,
-                evec_B,
-                nu_B,
-                evec_C,
-                nu_C,
-                l_A=l_i,
-                gamma_3p0=gamma_3p0,
-            )
-            w_dn = get_3p0_decay_width(
-                m_i_dn,
-                m_B,
-                m_C,
-                evecs_i_dn[:, idx_i],
-                nu_i_dn,
-                evec_B,
-                nu_B,
-                evec_C,
-                nu_C,
-                l_A=l_i,
-                gamma_3p0=gamma_3p0,
-            )
-
         dobs_dp.append(((w_up - w_dn) / (2 * eps)) * params_err[p_idx])
 
     return np.sqrt(np.sum(np.array(dobs_dp) ** 2))
+
+
+def solve_sd_mixed(sys_obj, r, n_d, e_q):
+    """Tensor-mix the (n_d+1)^3S_1 and (n_d)^3D_1 vectors; return the physical
+    (S-like, D-like) masses and e+e- widths.
+
+    The ^3S_1 and ^3D_1 channels share J^PC = 1^-- and are coupled by the
+    off-diagonal tensor element <^3S_1|V_T|^3D_1>. Diagonalizing the 2x2
+    ``[[m_S, H_SD], [H_SD, m_D]]`` gives the physical eigenstates: the lower
+    eigenvalue is S-dominant (m_S < m_D throughout this radial region), the upper
+    is D-dominant. The D-like state's leptonic width is carried almost entirely by
+    its small ^3S_1 admixture -- a pure D-wave has R(0)=0 -- which is the whole
+    reason psi(3770)/psi(4160) have measurable e+e- widths at all.
+
+    Returns ``(m_Slike, m_Dlike, w_Slike_keV, w_Dlike_keV)`` or ``None`` if either
+    radial level is absent from the basis. Widths are 0 when ``e_q == 0`` (B_c).
+    """
+    n_s = n_d + 1
+    evS, _, ecS, nuS = solve_gem(sys_obj, r, l=0, spin=1)
+    evD, _, ecD, nuD = solve_gem(sys_obj, r, l=2, spin=1)
+    if n_s >= ecS.shape[1] or n_d >= ecD.shape[1]:
+        return None
+    m_s = get_mass(evS, ecS, nuS, sys_obj, n_s, spin=1, l=0, j=1)
+    m_d = get_mass(evD, ecD, nuD, sys_obj, n_d, spin=1, l=2, j=1)
+    h_sd = calc_tensor_mixing_exact(ecS[:, n_s], nuS, ecD[:, n_d], nuD, sys_obj, s=1, j=1)
+    eigvals, eigvecs = np.linalg.eigh(np.array([[m_s, h_sd], [h_sd, m_d]]))
+    if e_q == 0.0:
+        return eigvals[0], eigvals[1], 0.0, 0.0
+    w_s = get_leptonic_width_mixed(
+        eigvals[0], ecS[:, n_s], nuS, ecD[:, n_d], nuD,
+        eigvecs[0, 0], eigvecs[1, 0], sys_obj, e_q,
+    )
+    w_d = get_leptonic_width_mixed(
+        eigvals[1], ecS[:, n_s], nuS, ecD[:, n_d], nuD,
+        eigvecs[0, 1], eigvecs[1, 1], sys_obj, e_q,
+    )
+    return eigvals[0], eigvals[1], w_s, w_d
+
+
+def propagate_mixed_width_uncertainty(sys_obj, r, params_err, n_d, e_q, which):
+    """sigma_comp on a mixed S-D leptonic width, propagated through the *full*
+    diagonalization (central differences in the 4 Cornell parameters).
+
+    This is the honest error bar for the mixed observable: re-mixing at each
+    perturbed parameter set captures how the e+e- strength tracks the S-D mixing
+    angle and the S-wave |R(0)|^2. (The old code reused the bare pure-D-wave
+    sigma_comp here, an underestimate that inflated the psi(3770) pull.) ``which``
+    is 'S' or 'D' for the S-like / D-like physical state.
+    """
+    eps = 1e-4
+    idx = 2 if which == "S" else 3  # position of the chosen width in solve_sd_mixed
+    contribs = []
+    for p_idx in range(4):
+        if params_err[p_idx] == 0.0:
+            contribs.append(0.0)
+            continue
+        p_up = [sys_obj.alpha_s, sys_obj.b, sys_obj.c, sys_obj.sigma_smear]
+        p_dn = list(p_up)
+        p_up[p_idx] += eps
+        p_dn[p_idx] -= eps
+        r_up = solve_sd_mixed(QuarkoniumSystem(sys_obj.m_1, sys_obj.m_2, *p_up), r, n_d, e_q)
+        r_dn = solve_sd_mixed(QuarkoniumSystem(sys_obj.m_1, sys_obj.m_2, *p_dn), r, n_d, e_q)
+        if r_up is None or r_dn is None:
+            contribs.append(0.0)
+            continue
+        contribs.append((r_up[idx] - r_dn[idx]) / (2 * eps) * params_err[p_idx])
+    return float(np.sqrt(np.sum(np.square(contribs))))
 
 
 def generate_spectrum(
@@ -249,6 +281,8 @@ def generate_spectrum(
     max_n=3,
     max_l=2,
     n_fit_params=4,
+    pdg_widths_ee=None,
+    pdg_widths_ee_err=None,
 ):
     """
     Dynamically generates the full spectroscopic multiplet n^(2S+1)L_J
@@ -450,36 +484,81 @@ def generate_spectrum(
                                 gg_p_err,
                             )
 
-    # Apply S-D mixing for the 2^3S_1 and 1^3D_1 states
-    from quarkonia.observables import calc_tensor_mixing_exact
-    name_2S = "(2^3S) ψ" if "c_cbar" in sector_name else ("(2^3S) Υ" if "b_bbar" in sector_name else "(2^3S) B_c^*")
-    name_1D = "(1^3D_1) ψ" if "c_cbar" in sector_name else ("(1^3D_1) Υ" if "b_bbar" in sector_name else "(1^3D_1) B_{c1,2,3}^*")
+    # Tensor S-D mixing of the J^PC = 1^-- pairs: (2^3S_1, 1^3D_1) and
+    # (3^3S_1, 2^3D_1). The off-diagonal <^3S_1|V_T|^3D_1> element redistributes
+    # both the masses and -- crucially -- the e+e- strength: a pure D-wave has
+    # R(0)=0, so psi(3770)/psi(4160) get their leptonic widths only through the
+    # small S-wave admixture. Only cc and bb carry vector (e+e-) data; the B_c is
+    # charged (no e+e- annihilation) and its observed states are the singlets, so
+    # it is excluded. (Previously only the first pair was mixed, leaving 2^3D_1 as
+    # a bare R(0)=0 width, and the mixed sigma_comp reused the pure-D-wave value.)
+    sym_3 = "ψ" if "c_cbar" in sector_name else ("Υ" if "b_bbar" in sector_name else None)
+    if sym_3 is not None:
+        sd_pairs = [
+            (0, f"(2^3S) {sym_3}", f"(1^3D_1) {sym_3}"),
+            (1, f"(3^3S) {sym_3}", f"(2^3D_1) {sym_3}"),
+        ]
+        for n_d, s_name, d_name in sd_pairs:
+            if s_name not in calculated_masses or d_name not in calculated_masses:
+                continue
+            mixed = solve_sd_mixed(sys_obj, r, n_d, e_q)
+            if mixed is None:
+                continue
+            m_s, m_d, w_s, w_d = mixed
+            # Mixing shifts the masses by < a few MeV, far below sigma_comp
+            # (~20-40 MeV), so the pre-mixing mass uncertainty is retained.
+            calculated_masses[s_name] = (m_s, calculated_masses[s_name][1])
+            calculated_masses[d_name] = (m_d, calculated_masses[d_name][1])
+            if e_q != 0.0:
+                ws_err = wd_err = 0.0
+                if params_err is not None and sum(params_err) > 0:
+                    ws_err = propagate_mixed_width_uncertainty(
+                        sys_obj, r, params_err, n_d, e_q, "S"
+                    )
+                    wd_err = propagate_mixed_width_uncertainty(
+                        sys_obj, r, params_err, n_d, e_q, "D"
+                    )
+                calculated_observables[s_name] = ("Leptonic Width (e+e-)", w_s, ws_err)
+                calculated_observables[d_name] = ("Leptonic Width (e+e-)", w_d, wd_err)
 
-    if name_2S in calculated_masses and name_1D in calculated_masses:
-        m_2S_unmixed = calculated_masses[name_2S][0]
-        m_1D_unmixed = calculated_masses[name_1D][0]
-        evec_2S = calculated_evecs[name_2S]
-        evec_1D = calculated_evecs[name_1D]
+    # Derived per-state theory sigma (MeV) = magnitude of the leading omitted
+    # relativistic correction for each state, from the same eigenvectors the
+    # masses came from. This is an informational model-viability diagnostic
+    # (recorded as the Sigma_Theory_MeV column / figure band) -- it is NOT the
+    # pull denominator. The pull/chi-square divides by the *computational* sigma:
+    # quad(sigma_exp, mass_err), where mass_err is the propagated parameter
+    # covariance computed above. (The fit weight in fitter.py still uses this
+    # theory sigma as a well-posed regularizer; the validation metric does not.)
+    sigma_theory_mev = {}
+    for name, evec in calculated_evecs.items():
+        if name not in calculated_masses:
+            continue
+        l_s, _, _, _ = parse_state_name(name)
+        dE_rel, _ = calc_relativistic_shift(evec, nu_array, sys_obj, l_s)
+        sigma_theory_mev[name] = dE_rel * 1000.0
 
-        mixing_element = calc_tensor_mixing_exact(evec_2S, nu_array, evec_1D, nu_array, sys_obj, s=1, j=1)
-        mixing_matrix = np.array([
-            [m_2S_unmixed, mixing_element],
-            [mixing_element, m_1D_unmixed]
-        ])
-        mixed_masses, mix_evecs = np.linalg.eigh(mixing_matrix)
-
-        calculated_masses[name_2S] = (mixed_masses[0], calculated_masses[name_2S][1])
-        calculated_masses[name_1D] = (mixed_masses[1], calculated_masses[name_1D][1])
-
-        if e_q != 0.0:
-            w_2S = get_leptonic_width_mixed(mixed_masses[0], evec_2S, nu_array, evec_1D, nu_array, mix_evecs[0, 0], mix_evecs[1, 0], sys_obj, e_q)
-            w_1D = get_leptonic_width_mixed(mixed_masses[1], evec_2S, nu_array, evec_1D, nu_array, mix_evecs[0, 1], mix_evecs[1, 1], sys_obj, e_q)
-            calculated_observables[name_2S] = ("Leptonic Width (e+e-)", w_2S, calculated_observables[name_2S][2])
-            calculated_observables[name_1D] = ("Leptonic Width (e+e-)", w_1D, calculated_observables[name_1D][2])
+    # S-wave vector (^3S_1) leptonic widths to fold into the combined validation
+    # chi-square. Matched to experiment by the bare state label; only states whose
+    # label ends "^3S)" are included, so the D-wave e+e- widths are excluded (they
+    # are model-completeness cases, not implementation tests -- see metrics).
+    leptonic_obs = []
+    if pdg_widths_ee:
+        for nm, (otype, val, err) in calculated_observables.items():
+            if "Leptonic" not in otype:
+                continue
+            bare = nm.split()[0]
+            if not bare.endswith("^3S)"):
+                continue
+            g_exp = pdg_widths_ee.get(bare)
+            if g_exp is None:
+                continue
+            s_exp = (pdg_widths_ee_err or {}).get(bare, 0.0)
+            leptonic_obs.append((nm, val, err, g_exp, s_exp))
 
     gof = format_and_evaluate(
         calculated_masses, pdg_data, sector_name, sector_id,
         pdg_err=pdg_err, n_fit_params=n_fit_params,
+        sigma_theory_mev=sigma_theory_mev, leptonic_obs=leptonic_obs,
     )
 
     if calculated_observables:
@@ -532,7 +611,7 @@ if __name__ == "__main__":
     mu_bc = (4.730 * 1.500) / (4.730 + 1.500)
 
     # Electric charge per sector (for the leptonic-width fit residuals).
-    e_q_map = {"cc": 2.0 / 3.0, "bb": -1.0 / 3.0, "bc": 0.0, "cu": 0.0}
+    e_q_map = {"cc": 2.0 / 3.0, "bb": -1.0 / 3.0, "bc": 0.0}
 
     # We need to get bb and cc alpha_s and sigma first to do the B_c interpolation
     (cc_alpha_s, _, _, cc_sigma), cc_errs = get_or_fit_parameters(
@@ -589,14 +668,6 @@ if __name__ == "__main__":
         f"sigma = {bc_sigma_qft:.4f} ± {err_bc_sigma:.4f}  (inherited from cc/bb fits)"
     )
 
-    m_u = 0.330  # Constituent light quark mass in GeV
-    cu_names = {"1S": "D", "3S": "D^*"}
-    # The D meson has a single anchor mass, which can fix only the potential
-    # offset c. The remaining Cornell parameters are frozen to physical values
-    # (universal string tension b, a light-system coupling alpha_s, and a smearing
-    # sigma) so the sector is not under-determined.
-    cu_alpha_s, cu_b, cu_sigma = 0.50, 0.18, 0.85
-
     sectors_config = [
         {
             "id": "bb",
@@ -643,24 +714,6 @@ if __name__ == "__main__":
             "n_fit_params": 2,
             "override_errs": bc_param_errs,
         },
-        {
-            "id": "cu",
-            "name": "D Meson (c_ubar)",
-            "m_1": 1.500,
-            "m_2": m_u,
-            "pdg_data": {"(1^1S)": 1.864},
-            "names": cu_names,
-            "initial_guesses": [cu_alpha_s, cu_b, -0.400, cu_sigma],
-            "bounds": (
-                [cu_alpha_s - 1e-5, cu_b - 1e-5, -1.0, cu_sigma - 1e-5],
-                [cu_alpha_s + 1e-5, cu_b + 1e-5, 1.0, cu_sigma + 1e-5],
-            ),
-            "max_n": 1,
-            "max_l": 0,
-            # Only the offset c is free; the single D mass fixes it exactly,
-            # so dof = 1 - 1 = 0 (no longer the old dof = 1 - 4 = -3).
-            "n_fit_params": 1,
-        },
     ]
 
     results_dict = {}
@@ -703,6 +756,8 @@ if __name__ == "__main__":
             max_n=config["max_n"],
             max_l=config["max_l"],
             n_fit_params=config["n_fit_params"],
+            pdg_widths_ee=all_pdg.get(f"{sid}_widths_ee_keV", {}),
+            pdg_widths_ee_err=all_pdg.get(f"{sid}_widths_ee_err_keV", {}),
         )
         gof["sector_id"] = config["id"]
         gof_summary.append(gof)
@@ -713,116 +768,6 @@ if __name__ == "__main__":
             "sys_obj": sys_obj,
             "errs": errs,
         }
-
-    # =========================================================================
-    # HADRONIC DECAY SHOWCASE: psi(3770) -> D + Dbar using 3P0 Vacuum Creation
-    # =========================================================================
-    cc_masses = results_dict["cc"]["masses"]
-    cc_evecs = results_dict["cc"]["evecs"]
-    cc_nu = results_dict["cc"]["nu"]
-    cu_masses = results_dict["cu"]["masses"]
-    cu_evecs = results_dict["cu"]["evecs"]
-    cu_nu = results_dict["cu"]["nu"]
-
-    psi_name = "(1^3D_1) ψ"  # D-wave charmonium psi(3770)
-    D_name = "(1^1S) D"  # S-wave D meson
-
-    if psi_name in cc_masses and D_name in cu_masses:
-        mass_psi = cc_masses[psi_name][0]
-        mass_D = cu_masses[D_name][0]
-
-        c_psi = cc_evecs[psi_name]
-        c_D = cu_evecs[D_name]
-
-        target_exp_width = 27.2
-        gamma_tuned = tune_gamma_3p0(
-            target_width_MeV=target_exp_width,
-            mass_A=mass_psi,
-            mass_B=mass_D,
-            mass_C=mass_D,
-            c_A=c_psi,
-            nu_A=cc_nu,
-            c_B=c_D,
-            nu_B=cu_nu,
-            c_C=c_D,
-            nu_C=cu_nu,
-            l_A=2,  # psi(3770) is an L=2 state
-            initial_gamma=0.4,
-        )
-
-        width_3p0_tuned = get_3p0_decay_width(
-            mass_A=mass_psi,
-            mass_B=mass_D,
-            mass_C=mass_D,
-            c_A=c_psi,
-            nu_A=cc_nu,
-            c_B=c_D,
-            nu_B=cu_nu,
-            c_C=c_D,
-            nu_C=cu_nu,
-            l_A=2,
-            gamma_3p0=gamma_tuned,
-        )
-
-        print("\n" + "=" * 80)
-        print(f"--- Showcase: Hadronic Decay via 3P0 Model ---")
-        print(f"Transition: {psi_name} -> {D_name} + {D_name}bar")
-        print(f"Mass {psi_name}: {mass_psi:.4f} GeV")
-        print(f"Mass {D_name} (x2):  {mass_D * 2.0:.4f} GeV")
-        if mass_psi > 2.0 * mass_D:
-            print(
-                f"Tuning 3P0 gamma to match experimental width: {target_exp_width} MeV"
-            )
-            print(f"Optimized gamma value: {gamma_tuned:.4f}")
-            print(f"Calculated 3P0 Decay Width: {width_3p0_tuned:.2f} MeV")
-        else:
-            print("Decay is kinematically forbidden (Mass A < Mass B + Mass C).")
-
-        # Predict an unknown decay using the locked-in tuned gamma
-        psi_excited = "(2^3D_1) ψ"
-        if psi_excited in cc_masses:
-            mass_psi_exc = cc_masses[psi_excited][0]
-            c_psi_exc = cc_evecs[psi_excited]
-            width_pred = get_3p0_decay_width(
-                mass_A=mass_psi_exc,
-                mass_B=mass_D,
-                mass_C=mass_D,
-                c_A=c_psi_exc,
-                nu_A=cc_nu,
-                c_B=c_D,
-                nu_B=cu_nu,
-                c_C=c_D,
-                nu_C=cu_nu,
-                l_A=2,
-                gamma_3p0=gamma_tuned,
-            )
-
-            width_pred_err = propagate_transition_uncertainty(
-                sys_obj=results_dict["cc"]["sys_obj"],
-                r=r,
-                params_err=results_dict["cc"]["errs"],
-                state_i_name=psi_excited,
-                state_f_name=None,
-                decay_type="3P0",
-                gamma_3p0=gamma_tuned,
-                m_B=mass_D,
-                evec_B=c_D,
-                nu_B=cu_nu,
-                m_C=mass_D,
-                evec_C=c_D,
-                nu_C=cu_nu,
-            )
-            print("-" * 80)
-            print(
-                f"Predicting Higher-Order Hadronic Decay: {psi_excited} -> {D_name} + {D_name}bar"
-            )
-            print(f"Mass {psi_excited}: {mass_psi_exc:.4f} GeV")
-            if mass_psi_exc > 2.0 * mass_D:
-                print(
-                    f"Predicted Width (using tuned gamma={gamma_tuned:.4f}): {width_pred:.2f} ± {width_pred_err:.2f} MeV"
-                )
-            else:
-                print("Decay is kinematically forbidden.")
 
     # =========================================================================
     # RADIATIVE DECAY SHOWCASE: M1 and E1 Transitions
@@ -944,7 +889,8 @@ if __name__ == "__main__":
     print("=" * 80 + "\n")
 
     gof_df = pd.DataFrame(gof_summary)[
-        ["sector_id", "sector", "n", "chi2", "dof", "chi2_per_dof", "rms_mev"]
+        ["sector_id", "sector", "n", "chi2", "dof", "chi2_per_dof", "rms_mev",
+         "n_lep", "chi2_comb", "dof_comb", "chi2_per_dof_comb"]
     ]
     gof_csv_path = paths.summary_csv("goodness_of_fit.csv")
     gof_df.to_csv(gof_csv_path, index=False)

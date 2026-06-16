@@ -6,7 +6,7 @@ apart. The layout is per-sector subfolders plus a ``summary/`` folder for global
 artifacts:
 
     results/
-      <sector_id>/            bb, cc, bc, cu
+      <sector_id>/            bb, cc, bc
         params.csv
         errors.csv
         observables.csv

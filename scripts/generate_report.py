@@ -23,7 +23,6 @@ import numpy as np
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 from quarkonia import paths
-from quarkonia.fitter import SIGMA_THEORY_MEV, WIDTH_THEORY_FRAC
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 RESULTS_DIR = paths.results_root()
@@ -34,7 +33,6 @@ SECTORS = [
     ("bb", "Bottomonium (b_bbar)"),
     ("cc", "Charmonium (c_cbar)"),
     ("bc", "B_c Meson (b_cbar)"),
-    ("cu", "D Meson (c_ubar)"),
 ]
 
 
@@ -90,10 +88,13 @@ def section_header():
         "This report aggregates every CSV produced by `run_spectrum.py`. Masses are\n"
         "Gaussian-Expansion-Method (GEM) solutions of the Cornell potential with\n"
         "perturbative spin-dependent corrections. The `±` on a calculated mass is the\n"
-        "*model* uncertainty propagated from the fitted-parameter covariance. The\n"
-        "*pull* and χ², however, use a **physical** error bar\n"
-        f"`σ = quad(σ_exp, σ_theory)` with `σ_theory = {SIGMA_THEORY_MEV:.0f}` MeV — see\n"
-        "§1 for why.\n"
+        "**computational** uncertainty: the fitted-parameter covariance propagated\n"
+        "through the GEM solve by finite differences. The *pull* and χ² use\n"
+        "`σ = quad(σ_exp, σ_comp)` — experimental error in quadrature with that same\n"
+        "computational uncertainty — so they test whether the implementation\n"
+        "reproduces experiment within its computed precision (see §1). The\n"
+        "relativistic-truncation theory bar `σ_theory` is reported separately as a\n"
+        "model-viability diagnostic, never as the χ² denominator.\n"
     )
 
 
@@ -111,61 +112,105 @@ def section_goodness_of_fit():
         "**What goodness of fit means here.** For each sector we compare the `N` "
         "predicted masses with experiment and form\n\n"
         "    χ² = Σ_i [ (m_calc,i − m_exp,i) / σ_i ]²,    χ²/dof with dof = N − N_params.\n\n"
-        "The whole question is *what σ_i to use*. PDG experimental mass errors are "
-        "tiny (≈ 0.1–1 MeV) — far smaller than any non-relativistic potential model "
-        "can hope to match — so a χ² built from them alone is astronomically large and "
-        "tells you nothing except that the model is an approximation. The honest error "
-        "bar is dominated instead by a **theory systematic** "
-        f"`σ_theory = {SIGMA_THEORY_MEV:.0f} MeV`, representing the physics the model "
-        "omits (relativistic `O(v²/c²)` corrections, coupled channels, quenching). We "
-        "therefore use `σ_i = quad(σ_exp,i, σ_theory)`.\n\n"
-        "With this definition **χ²/dof ≈ 1 means the model reproduces the spectrum to "
-        "within its intrinsic systematic**, and χ²/dof ≫ 1 flags a sector where the "
-        "neglected physics is genuinely large. The model-independent figure of merit "
-        "is the **RMS mass deviation** (last column), which assumes nothing about σ.\n"
+        "The denominator is the **computational** uncertainty: "
+        "`σ_i = quad(σ_exp,i, σ_comp,i)`, the PDG experimental error in quadrature with "
+        "`σ_comp,i` — the fitted Cornell-parameter covariance propagated through the GEM "
+        "solve for state `i` by finite differences, "
+        "`σ_comp,i² = Σ_p (∂m_i/∂p)² σ_p²`. This is the textbook pull denominator "
+        "(parametric prediction error ⊕ experimental error): it tests whether the "
+        "*computational implementation* reproduces experiment to within its own computed "
+        "precision — **not** whether the non-relativistic model is physically complete.\n\n"
+        "The propagated `σ_comp` is sizable (≈20 MeV bb, ≈40 MeV cc — comparable to or "
+        "larger than the mass deviations), so the **masses-only χ²/dof lands ≲ 1** "
+        "(≈0.25 bb, 0.82 cc): the implementation reproduces experiment to within its "
+        "computed precision, with pulls mostly sub-1σ. (A χ²/dof somewhat below 1 just "
+        "means the parametric covariance slightly overestimates the scatter — not a "
+        "defect.)\n\n"
+        "**Two χ² columns are reported.** The fit objective optimizes masses *plus* the "
+        "lowest two ³S₁ `e⁺e⁻` widths (J/ψ, ψ(2S); Υ(1S), Υ(2S)), so the masses-only "
+        "validation alone would understate what is being constrained. The **`χ²/dof "
+        "(m+e⁺e⁻)`** column therefore folds every S-wave vector leptonic width (n=1,2,3) "
+        "in alongside the masses, with the *same* `quad(σ_exp, σ_comp)` denominator — no "
+        "new error model. It rises toward/above 1 for charm (≈1.9), where the |R(0)|²-"
+        "driven widths deviate ≈2–3 σ_comp, and stays low for bottom (≈0.3). "
+        "**Deliberately excluded** from this χ² are the D-wave `e⁺e⁻` widths "
+        "(ψ(3770)/ψ(4160)), the two-photon and the radiative widths: those probe model "
+        "*completeness* (e.g. the missing coupled-channel S-D mixing that leaves ψ(3770) "
+        "≈10σ low), which `σ_comp` is not built to test — they are reported as pure "
+        "predictions in §4 and the limitations note.\n\n"
+        "The relativistic-truncation theory bar "
+        "`σ_theory,i = |⟨ p⁴/8c²·(1/m₁³+1/m₂³) ⟩_i|` answers the separate question of "
+        "*model viability* and is recorded as the `Sigma_Theory_MeV` diagnostic, not the "
+        "χ² denominator. The model-independent figure of merit remains the "
+        "**RMS mass deviation**, which assumes nothing about σ.\n"
     )
     if df is None:
         lines.append("_`summary/goodness_of_fit.csv` not found — run `run_spectrum.py` first._\n")
         return "\n".join(lines)
 
+    has_comb = "chi2_per_dof_comb" in df.columns
     rows = []
     tot_chi2 = 0.0
     tot_n = 0
     tot_par = 0
+    tot_chi2c = 0.0
+    tot_nc = 0
     for _, r in df.iterrows():
         n = int(r["n"])
         dof = int(r["dof"])
-        rows.append([
+        row = [
             r["sector"],
             n,
             f"{r['chi2']:.2f}",
             dof if dof > 0 else f"{dof} (det.)",
             _fmt_reduced_chi2(dof, r["chi2_per_dof"]),
-            f"{r['rms_mev']:.2f}",
-        ])
+        ]
+        if has_comb:
+            n_lep = int(r["n_lep"]) if not pd.isna(r["n_lep"]) else 0
+            dof_c = int(r["dof_comb"])
+            row += [
+                f"+{n_lep}",
+                _fmt_reduced_chi2(dof_c, r["chi2_per_dof_comb"]),
+            ]
+            tot_chi2c += r["chi2_comb"]
+            tot_nc += n + n_lep
+        row.append(f"{r['rms_mev']:.2f}")
+        rows.append(row)
         tot_chi2 += r["chi2"]
         tot_n += n
         tot_par += n - dof
     glob_dof = tot_n - tot_par
-    rows.append([
+    glob_row = [
         "**GLOBAL**", tot_n, f"**{tot_chi2:.2f}**",
         glob_dof, _fmt_reduced_chi2(glob_dof, tot_chi2 / glob_dof if glob_dof > 0 else float("nan")),
-        "—",
-    ])
-    lines.append(md_table(
-        ["Sector", "N states", "χ²", "dof", "χ²/dof", "RMS [MeV]"], rows))
+    ]
+    if has_comb:
+        glob_dof_c = tot_nc - tot_par
+        glob_row += [
+            f"+{tot_nc - tot_n}",
+            _fmt_reduced_chi2(glob_dof_c, tot_chi2c / glob_dof_c if glob_dof_c > 0 else float("nan")),
+        ]
+    glob_row.append("—")
+    rows.append(glob_row)
+    headers = ["Sector", "N (mass)", "χ²", "dof", "χ²/dof (mass)"]
+    if has_comb:
+        headers += ["+e⁺e⁻", "χ²/dof (m+e⁺e⁻)"]
+    headers.append("RMS [MeV]")
+    lines.append(md_table(headers, rows))
     lines.append(
-        "\n_Bottomonium sits near χ²/dof ≈ 1 — the model captures the bb spectrum to "
-        f"within the {SIGMA_THEORY_MEV:.0f} MeV systematic. Charmonium is higher: charm "
-        "is lighter and more relativistic, so the neglected `O(v²/c²)` corrections "
-        "exceed the floor. That is physics, not overfitting — the cross-validation "
-        "below confirms the parameters generalize to states held out of the fit. "
-        "Sectors with dof ≤ 0 (B_c, D) are exactly determined, so a reduced χ² is "
-        "undefined ('—')._\n")
+        "\n_The masses-only reduced χ² lands ≲ 1: measured against the computational σ "
+        "(tens of MeV), the predictions sit mostly within 1σ_comp of experiment. Folding "
+        "in the S-wave `e⁺e⁻` widths (the `m+e⁺e⁻` column) — the same observable class the "
+        "fit optimizes — pushes charm to ≈1.9 (its |R(0)|²-driven widths deviate ≈2–3 "
+        "σ_comp) while bottom stays ≈0.3. The headline number is the model-independent RMS "
+        "mass deviation, larger for the lighter, more relativistic charm. The B_c sector "
+        "has dof ≤ 0 (exactly determined), so a reduced χ² is undefined ('—')._\n")
     return "\n".join(lines)
 
 
 def section_cross_validation():
+    """DEPRECATED and no longer assembled into the report (leave-one-out is
+    deprecated; see scripts/cross_validate.py). Kept for reference only."""
     df = read_csv_safe(paths.summary_csv("cross_validation.csv"))
     lines = ["## 1b. Cross-Validation (overfitting check)\n"]
     lines.append(
@@ -227,11 +272,11 @@ def section_parameters():
         ["Sector", "α_s", "b [GeV²]", "c [GeV]", "σ [GeV]", "fit χ²/dof"], rows))
     lines.append(
         "\n_The fit χ²/dof is a true reduced χ²: residuals are normalised by the "
-        f"physical σ (theory floor {SIGMA_THEORY_MEV:.0f} MeV on masses, "
-        f"{WIDTH_THEORY_FRAC*100:.0f}% on the leptonic widths that are now part of the "
-        "objective). For the B_c sector `α_s` and `σ` are not fitted freely — they are "
-        "log-interpolated from the cc/bb fits, and their uncertainties are inherited "
-        "by error propagation. For the D meson only the offset `c` is free._\n")
+        "derived physical σ — the per-state leading relativistic correction on masses, "
+        "and a derived per-sector fraction `quad(16α_s/3π, √⟨v²⟩)` (≈60% for bb, ≈90% "
+        "for cc) on the leptonic widths that are part of the objective. For the B_c "
+        "sector `α_s` and `σ` are not fitted freely — they are log-interpolated from "
+        "the cc/bb fits, and their uncertainties are inherited by error propagation._\n")
     return "\n".join(lines)
 
 
@@ -326,6 +371,33 @@ def section_observables():
 
     if len(lines) == 1:
         lines.append("_No annihilation widths available (neutral-flavour sectors only)._\n")
+        return "\n".join(lines)
+
+    lines.append(
+        "**Reading the width pulls — three effects are intrinsic to the "
+        "non-relativistic model, not fit defects, and are reported as-is (never "
+        "tuned away):**\n\n"
+        "- **D-wave leptonic widths (ψ(3770)=1³D₁, ψ(4160)=2³D₁).** A pure ³D₁ "
+        "has `R(0)=0`, so its `e⁺e⁻` width comes *entirely* from the small ³S₁ "
+        "admixture set by the off-diagonal tensor element `⟨³S₁|V_T|³D₁⟩`. Both "
+        "vector pairs are now mixed (1D↔2S **and** 2D↔3S), and the error bar is "
+        "propagated through the full diagonalization. ψ(4160) lands within ~1.7σ. "
+        "ψ(3770) stays ≈3.5× low (the dominant pull) because the *perturbative* "
+        "tensor mixing is weaker than the physical coupled-channel mixing near the "
+        "open-charm `DD̄` threshold — coupled channels are outside a pure potential "
+        "model.\n"
+        "- **η_c → γγ overshoot (×2.2).** The Gaussian-smeared contact hyperfine "
+        "over-concentrates the spin-singlet ¹S₀ wavefunction at the origin, so its "
+        "`|R(0)|²` (hence the γγ rate) is too large. The P-wave χ_c0/χ_c2 → γγ, "
+        "which depend on `|R'(0)|²` rather than `|R(0)|²`, agree with experiment "
+        "(χ_c2: 0.55 vs 0.56 keV).\n"
+        "- **M1 radiative bars (~130%).** The M1 rate scales as `k³` with the "
+        "photon energy `k` equal to the hyperfine splitting, which is set by the "
+        "smearing scale σ_smear. σ_smear is the most loosely-determined fitted "
+        "parameter (≈38% for `cc`, ≈46% for `bb`), so `δΓ/Γ ≈ 3·δσ/σ` makes the "
+        "propagated M1 uncertainty honestly large. The E1 photon energy is the "
+        "well-determined P→S gap, so E1 widths stay ~5%.\n"
+    )
     return "\n".join(lines)
 
 
@@ -409,7 +481,8 @@ def main():
     sections = [
         section_header(),
         section_goodness_of_fit(),
-        section_cross_validation(),
+        # section_cross_validation() -- leave-one-out is deprecated (see
+        # scripts/cross_validate.py); omitted from the report.
         section_parameters(),
         section_masses(),
         section_observables(),

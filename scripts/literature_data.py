@@ -55,9 +55,6 @@ EQ 2019    : E. J. Eichten, C. Quigg, "Quarkonium wave functions at the origin:
 HPQCD 2010 : E. B. Gregory et al. (HPQCD), Phys. Rev. D 83, 014506 (2011),
     arXiv:0909.4462 ("A prediction of the B_c* mass in full lattice QCD"):
     M(B_c*) = 6330(7)(2)(6) MeV with the PDG B_c(0-) = 6275(1) MeV anchor.
-ELQ 2006   : E. J. Eichten, K. Lane, C. Quigg, "New states above charm
-    threshold", Phys. Rev. D 73, 014014 (2006), arXiv:hep-ph/0511179. Coupled-
-    channel (CCC) estimate of Gamma(psi(3770) -> D Dbar).
 
 Almost every theory number below (B_c masses, leptonic/two-photon/digamma widths,
 E1/M1 transition widths) is read directly from the comprehensive comparison tables
@@ -193,21 +190,6 @@ BC_MESON = {
 BC_LATTICE = {
     "1 1S0": (6275, 1),     # PDG/HPQCD anchor, B_c(1S) pseudoscalar
     "1 3S1": (6330, 7),     # HPQCD prediction, B_c*(1S) vector
-}
-
-# ============================ D MESON (c u-bar) ============================ #
-# Masses in MeV. The D sector in this project carries only the 1^1S0 anchor, so
-# the literature here is mainly for context / a possible D* prediction overlay.
-# EFG (D): Ebert-Faustov-Galkin EPJC 66, 197 (2010), Table 1 (read from ar5iv).
-D_MESON = {
-    "EFG 2010 (rel.)": {
-        "1 1S0": 1871, "1 3S1": 2010, "2 1S0": 2581, "2 3S1": 2632,
-        "1 3P0": 2406, "1 3P2": 2460,
-    },
-    # PDG-measured anchors, for reference (D^0 and D*(2007)^0).
-    "PDG (measured)": {
-        "1 1S0": 1865, "1 3S1": 2007,
-    },
 }
 
 # =========================== LEPTONIC WIDTHS =============================== #
@@ -367,17 +349,6 @@ RP0_SQUARED = {
     "bb": {"1P": 1.417, "2P": 1.6057, "3P": 1.8240},
 }
 
-# ===================== 3P0 HADRONIC WIDTH (showcase) ====================== #
-# Gamma(psi(3770) = 1^3D1 -> D Dbar), in MeV. This project tunes its own gamma_3P0
-# to the PDG total, so these are context: predictions from other open-charm
-# strong-decay calculations against the same observable.
-PSI3770_TO_DDBAR = {
-    "BGS 2005 (3P0)":        43.0,   # Barnes-Godfrey-Swanson, pure 1^3D1 (PRD 72, 054026)
-    "ELQ 2006 (CCC)":        20.1,   # Eichten-Lane-Quigg coupled channels (PRD 73, 014014)
-    "MGI (mod. GI, 3P0)":    29.1,   # modified Godfrey-Isgur 3P0
-    "PDG (measured total)":  27.2,   # PDG total width of psi(3770) [MeV]
-}
-
 # =================== Cornell potential parameters ========================== #
 # V(r) = -(4/3) alpha_s / r + b r (+ c).  b is the string tension in GeV^2.
 # "kind": "cornell"  -> fixed alpha_s, so V(r) can be drawn directly;
@@ -455,8 +426,6 @@ CITE = {
     "Shah 2012": 32,
     "Patel-Vinodkumar 2009": 33,
     "Gonzalez 2003": 34,
-    # psi(3770) -> D Dbar showcase
-    "ELQ 2006 (CCC)": 37,
     # measured data / lattice / reference values
     "PDG": 15,
     "PDG 2026": 15,

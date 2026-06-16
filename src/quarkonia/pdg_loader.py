@@ -17,7 +17,9 @@ pipeline doesn't care where the numbers came from:
       "cc": {...}, "bc": {...},
       "cc_widths_total_MeV": {...},
       "cc_widths_ee_keV": {...},
+      "cc_widths_ee_err_keV": {...},          # experimental 1-sigma on the e+e- width
       "cc_widths_gammagamma_keV": {...},
+      "cc_widths_gammagamma_err_keV": {...},  # experimental 1-sigma on the gamma-gamma width
       "bb_widths_*": {...},
     }
 """
@@ -183,17 +185,29 @@ def _particle_name(cur, pdgid):
     return r["name"] if r else None
 
 
+def _row_err(r):
+    """Symmetric experimental 1-sigma (the larger of the asymmetric PDG errors) in
+    the row's own units, or None if neither error is recorded."""
+    errs = [abs(e) for e in (r["error_positive"], r["error_negative"]) if e is not None]
+    return max(errs) if errs else None
+
+
 def _partial_width_kev(cur, pdgid, decay):
-    """Partial width to ``decay`` (e.g. 'e+ e-'), in keV, or None.
+    """Partial width to ``decay`` (e.g. 'e+ e-') and its experimental 1-sigma error,
+    both in keV: returns the tuple ``(width, err)`` (``(None, None)`` if absent;
+    ``err`` may be ``None`` even when ``width`` is found).
 
     PDG stores this two ways: as a direct partial width on the
     ``G(<particle> --> <decay>)`` node (energy units), or only as a branching
     fraction (dimensionless) that we multiply by the total width. The unit on the
-    value tells us which we're looking at.
+    value tells us which we're looking at. The experimental error rides along the
+    same node (it is queried in :func:`_rows`); for the branching-fraction form the
+    fractional error is scaled by the total width (the total's own error is a
+    second-order term and is neglected).
     """
     pname = _particle_name(cur, pdgid)
     if pname is None:
-        return None
+        return None, None
     children = cur.execute(
         "SELECT pdgid, description FROM pdgid WHERE parent_pdgid = ?", (pdgid,)
     ).fetchall()
@@ -204,10 +218,14 @@ def _partial_width_kev(cur, pdgid, decay):
         r = _pick(cur, direct[0]["pdgid"])
         if r is not None:
             width = _convert(r["value"], r["unit_text"], _TO_KEV)
+            raw_err = _row_err(r)
             if width is not None:  # value carried energy units -> it's a width
-                return width
+                err = _convert(raw_err, r["unit_text"], _TO_KEV) if raw_err is not None else None
+                return width, err
             total = _total_width_kev(cur, pdgid)  # dimensionless -> it's a fraction
-            return r["value"] * total if total is not None else None
+            if total is None:
+                return None, None
+            return r["value"] * total, (raw_err * total if raw_err is not None else None)
 
     # 2) branching-fraction summary node, e.g. "chi_c2(1P) --> gamma gamma"
     bfx = [c for c in children if c["description"] == f"{pname} --> {decay}"]
@@ -215,8 +233,11 @@ def _partial_width_kev(cur, pdgid, decay):
         r = _pick(cur, bfx[0]["pdgid"])
         if r is not None:
             total = _total_width_kev(cur, pdgid)
-            return r["value"] * total if total is not None else None
-    return None
+            if total is None:
+                return None, None
+            raw_err = _row_err(r)
+            return r["value"] * total, (raw_err * total if raw_err is not None else None)
+    return None, None
 
 
 @lru_cache(maxsize=None)
@@ -232,7 +253,8 @@ def load_pdg_data(db_path=None):
     try:
         data = {}
         for sector, states in STATE_MAP.items():
-            masses, mass_err, total, ee, gg = {}, {}, {}, {}, {}
+            masses, mass_err, total = {}, {}, {}
+            ee, ee_err, gg, gg_err = {}, {}, {}, {}
             for label, pdgid in states.items():
                 if pdgid is None:
                     masses[label] = None
@@ -247,19 +269,25 @@ def load_pdg_data(db_path=None):
                     total[label] = tw / 1000.0  # keV -> MeV
 
                 if _is_vector(label):
-                    w_ee = _partial_width_kev(cur, pdgid, _EE)
+                    w_ee, w_ee_err = _partial_width_kev(cur, pdgid, _EE)
                     if w_ee is not None:
                         ee[label] = w_ee
+                        if w_ee_err is not None:
+                            ee_err[label] = w_ee_err
                 if _is_two_photon(label):
-                    w_gg = _partial_width_kev(cur, pdgid, _GG)
+                    w_gg, w_gg_err = _partial_width_kev(cur, pdgid, _GG)
                     if w_gg is not None:
                         gg[label] = w_gg
+                        if w_gg_err is not None:
+                            gg_err[label] = w_gg_err
 
             data[sector] = masses
             data[f"{sector}_mass_err_GeV"] = mass_err
             data[f"{sector}_widths_total_MeV"] = total
             data[f"{sector}_widths_ee_keV"] = ee
+            data[f"{sector}_widths_ee_err_keV"] = ee_err
             data[f"{sector}_widths_gammagamma_keV"] = gg
+            data[f"{sector}_widths_gammagamma_err_keV"] = gg_err
         return data
     finally:
         con.close()
