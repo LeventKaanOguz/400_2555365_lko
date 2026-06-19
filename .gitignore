@@ -226,6 +226,8 @@ tex/
 prestex/
 poster/
 
+CLAUDE*
+
 # Scratch / explanatory write-ups (e.g. the statistics explainer), not a
 # submission artifact -- regenerated on demand.
 dump/
