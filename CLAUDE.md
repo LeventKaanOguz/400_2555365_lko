@@ -100,12 +100,14 @@ tex/
   apssamp.tex         the full REVTeX paper (the long-form final report)
 prestex/
   presentation.tex    the beamer final-presentation deck (long form, ~15-30 min)
+poster/
+  poster.tex          the A2 conference poster (pulls figures from ../figures/)
 ```
 
-The figures, the LaTeX paper under `tex/`, and the beamer deck under `prestex/`
-are the submission artifacts. `make_figures.py` is the only figure generator; the
-old `eps.gen.py` was retired when the per-sector `results/<sector>/` layout
-replaced the flat one.
+The figures, the LaTeX paper under `tex/`, the beamer deck under `prestex/`, and
+the conference poster under `poster/` are the submission artifacts.
+`make_figures.py` is the only figure generator; the old `eps.gen.py` was retired
+when the per-sector `results/<sector>/` layout replaced the flat one.
 
 **The final presentation** lives in `prestex/presentation.tex` — a self-contained
 beamer deck (`aspectratio=169`, stock **Madrid** theme to match the earlier mock
@@ -126,6 +128,20 @@ honest numbers (bb RMS 7.0 MeV, cc 28.8 MeV, the η_c→γγ ×2.4 overshoot cal
 an NR-limit artefact). If you trim it back to a short course-limit version, branch —
 don't overwrite this one.
 
+**The conference poster** lives in `poster/poster.tex` — an A2 portrait
+(420×594 mm, three-column research-poster layout) built as a plain
+`\documentclass[11pt]{article}` with a custom full-bleed `geometry`, *not*
+beamerposter/tikzposter. Like the deck it pulls its figures straight from
+`../figures/` (via `\graphicspath`), so it has no dependency on the slow fit; the
+METU emblem is the local `poster/odtulogo.png`. It is a faithful port of the
+Claude-Design "Poster — Option A" mock (METU-red lead, deep-navy ink, Source
+Serif headings + Source Sans body). Build it with plain LaTeX (no conda), a
+single pass — no bib/aux:
+
+```bash
+cd poster && pdflatex poster.tex
+```
+
 **Submission naming** (everything ships from `submits/`):
 
 ```text
@@ -134,10 +150,14 @@ submits/
   400_inter_2555365_leventkaanoguz.pdf  interim report
   400_revtex_2555365.pdf                final paper (copy of tex/apssamp.pdf)
   400_fipres_2555365.pdf                final presentation (copy of prestex/presentation.pdf)
+  400_poster.pdf                        conference poster (copy of poster/poster.pdf)
 ```
 
-After recompiling either LaTeX source, copy the fresh PDF into `submits/` under its
-`400_<kind>_2555365*.pdf` name — the graders read `submits/`, not the build dirs.
+After recompiling any of the LaTeX sources, copy the fresh PDF into `submits/`
+under its submission name — the graders read `submits/`, not the build dirs. The
+paper, presentation, and interim/proposal follow `400_<kind>_2555365*.pdf`; the
+poster is the one exception, shipped as plain `400_poster.pdf` (no student
+number) — keep it that way, don't "fix" it to match the pattern.
 
 ## How a number gets computed
 
