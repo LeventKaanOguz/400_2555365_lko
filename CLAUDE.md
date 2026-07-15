@@ -96,6 +96,7 @@ scripts/
   generate_report.py  results/ CSVs -> REPORT.md
   make_figures.py     results/ CSVs + literature_data.py -> figures/*.pdf,*.png
   literature_data.py  curated theory/experiment values from the literature
+  estimate_theory_systematic.py   per-state Sigma_Theory_MeV table (model-viability diagnostic)
 tex/
   apssamp.tex         the full REVTeX paper (the long-form final report)
 prestex/
